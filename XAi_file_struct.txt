@@ -1,0 +1,297 @@
+XAI-Intrusion-Detection/
+│
+├── backend/
+│   ├── app.py
+│   ├── config.py
+│   ├── requirements.txt
+│
+│   ├── data/
+│   │   ├── raw/
+│   │   │   ├── KDDTrain+.txt      ← ORIGINAL dataset
+│   │   │   └── KDDTest+.txt       ← ORIGINAL dataset
+│   │   └── processed/
+│   │       └── processed_data.csv ← CREATED by us
+│
+│   ├── preprocessing/
+│   │   └── preprocess.py
+│
+│   ├── model/
+│   │   ├── train_model.py
+│   │   ├── predict.py
+│   │   └── risk_score.py
+│
+│   ├── explainability/
+│   │   └── shap_explainer.py
+│
+│   ├── saved_models/
+│   │   └── rf_model.pkl
+│
+│   └── utils/
+│       └── helpers.py
+│
+├── frontend/
+│   ├── index.html
+│   ├── css/
+│   │   └── styles.css
+│   └── js/
+│       └── dashboard.js
+│
+├── docs/
+│   ├── architecture.png
+│   ├── project_report.pdf
+│   └── research_notes.md
+│
+├── README.md
+└── .gitignore
+
+
+📁 Project File Structure Explanation
+🔹 Root Directory: XAI-Intrusion-Detection/
+
+This is the main project directory that contains all backend logic, frontend interface, documentation, and configuration files.
+
+🧠 backend/
+
+This folder contains all core machine learning, detection, explainability, and API logic of the intrusion detection system.
+
+📄 app.py
+
+Purpose: Backend API entry point.
+
+Handles requests from the frontend
+
+Accepts network traffic data
+
+Calls prediction, risk scoring, and explainability modules
+
+Sends results (prediction, risk score, explanations) back to the dashboard
+
+📌 Role: Integrates all backend components into a single service.
+
+📄 config.py
+
+Purpose: Central configuration file.
+
+Stores file paths (dataset, model)
+
+Defines constants like thresholds and parameters
+
+Helps avoid hardcoded values
+
+📌 Role: Improves maintainability and scalability.
+
+📄 requirements.txt
+
+Purpose: Dependency management.
+
+Lists all Python libraries used (scikit-learn, SHAP, FastAPI/Flask, pandas, numpy, etc.)
+
+Ensures reproducible environment setup
+
+📌 Role: Makes the project easy to install and run.
+
+📊 backend/data/
+
+Stores datasets used by the system.
+
+📁 raw/
+
+Contains: KDDTrain+.txt, KDDTest+.txt
+
+Original, unprocessed NSL-KDD dataset
+
+Used as input for preprocessing
+
+📌 Role: Preserves original data for reference and reproducibility.
+
+📁 processed/
+
+Contains: processed_data.csv
+
+Cleaned and encoded version of dataset
+
+Used directly for training and testing
+
+📌 Role: Speeds up training and prediction.
+
+⚙️ backend/preprocessing/
+📄 preprocess.py
+
+Purpose: Data preparation module.
+
+Handles missing values
+
+Encodes categorical features
+
+Normalizes numerical features
+
+Splits dataset into training and testing sets
+
+📌 Role: Ensures clean and ML-ready data.
+
+🤖 backend/model/
+
+Contains all machine learning–related logic.
+
+📄 train_model.py
+
+Purpose: Model training module.
+
+Trains Random Forest classifier on processed data
+
+Evaluates initial performance
+
+Saves trained model as .pkl
+
+📌 Role: Builds the intrusion detection intelligence.
+
+📄 predict.py
+
+Purpose: Prediction module.
+
+Loads trained model
+
+Predicts whether traffic is normal or an attack
+
+Outputs probability scores
+
+📌 Role: Performs real-time or batch intrusion detection.
+
+📄 risk_score.py
+
+Purpose: Threat scoring module.
+
+Converts prediction probability into a 0–100 risk score
+
+Categorizes threat as Low, Medium, or High
+
+📌 Role: Transforms ML output into actionable security insight.
+
+🔍 backend/explainability/
+📄 shap_explainer.py
+
+Purpose: Explainable AI module.
+
+Uses SHAP TreeExplainer for Random Forest
+
+Identifies top features influencing each prediction
+
+Generates human-readable explanations
+
+📌 Role: Adds transparency and trust to the IDS.
+
+💾 backend/saved_models/
+📄 rf_model.pkl
+
+Purpose: Stored trained model.
+
+Saved Random Forest classifier
+
+Loaded during prediction phase
+
+📌 Role: Separates training and inference stages.
+
+🛠️ backend/utils/
+📄 helpers.py
+
+Purpose: Utility functions.
+
+Common reusable functions
+
+Logging, formatting, helper operations
+
+📌 Role: Keeps code clean and modular.
+
+🖥️ frontend/
+
+Contains the user interface for the IDS dashboard.
+
+📄 index.html
+
+Purpose: Dashboard structure.
+
+Displays alerts, risk scores, explanations
+
+Acts as main UI page
+
+📌 Role: User interaction layer.
+
+📁 css/
+📄 styles.css
+
+Purpose: Styling file.
+
+Controls layout, colors, and responsiveness
+
+Improves readability and usability
+
+📌 Role: Enhances user experience.
+
+📁 js/
+📄 dashboard.js
+
+Purpose: Frontend logic.
+
+Sends data to backend API
+
+Receives prediction results
+
+Dynamically updates dashboard content
+
+📌 Role: Connects UI with backend intelligence.
+
+📚 docs/
+
+Contains documentation and academic materials.
+
+📄 architecture.png
+
+Purpose: System architecture diagram.
+
+Visual representation of data flow
+
+Used in report and presentations
+
+📄 project_report.pdf
+
+Purpose: Final academic report.
+
+Problem statement
+
+Methodology
+
+Results and analysis
+
+Conclusion and future work
+
+📄 research_notes.md
+
+Purpose: Research reference file.
+
+Notes on related work
+
+Ideas for novelty
+
+Future enhancements
+
+📄 README.md
+
+Purpose: Project overview.
+
+Explains how to install, run, and use the project
+
+Describes features and structure
+
+📌 Role: First point of contact for users and evaluators.
+
+🚫 .gitignore
+
+Purpose: Version control hygiene.
+
+Prevents committing datasets, models, and temp files
+
+Keeps repository clean
+
+🏁 One-Line Summary (Use in Viva)
+
+“The backend handles intrusion detection and explainability, the frontend visualizes results, and the documentation supports academic and research presentation.”
