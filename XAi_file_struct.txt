@@ -7,10 +7,10 @@ XAI-Intrusion-Detection/
 │
 │   ├── data/
 │   │   ├── raw/
-│   │   │   ├── KDDTrain+.txt      ← ORIGINAL dataset
-│   │   │   └── KDDTest+.txt       ← ORIGINAL dataset
+│   │   │   ├── KDDTrain+.txt
+│   │   │   └── KDDTest+.txt
 │   │   └── processed/
-│   │       └── processed_data.csv ← CREATED by us
+│   │       └── processed_data.csv
 │
 │   ├── preprocessing/
 │   │   └── preprocess.py
@@ -21,13 +21,18 @@ XAI-Intrusion-Detection/
 │   │   └── risk_score.py
 │
 │   ├── explainability/
-│   │   └── shap_explainer.py
+│   │   ├── shap_explainer.py
+│   │   └── explanation_engine.py
+│
+│   ├── anomaly_detection/
+│   │   └── isolation_forest.py
 │
 │   ├── saved_models/
-│   │   └── rf_model.pkl
+│   │   ├── rf_model.pkl
+│   │   └── if_model.pkl
 │
-│   └── utils/
-│       └── helpers.py
+│   ├── utils/
+│   │   └── helpers.py
 │
 ├── frontend/
 │   ├── index.html
@@ -44,254 +49,280 @@ XAI-Intrusion-Detection/
 ├── README.md
 └── .gitignore
 
+🔍 DETAILED EXPLANATION (FILE BY FILE)
+🔹 backend/
 
-📁 Project File Structure Explanation
-🔹 Root Directory: XAI-Intrusion-Detection/
+This is the brain of the system — ML models, explanations, APIs, and logic live here.
 
-This is the main project directory that contains all backend logic, frontend interface, documentation, and configuration files.
+app.py
 
-🧠 backend/
+Role: Main backend entry point
 
-This folder contains all core machine learning, detection, explainability, and API logic of the intrusion detection system.
+What it does:
 
-📄 app.py
+Starts the FastAPI / Flask server
 
-Purpose: Backend API entry point.
+Accepts incoming traffic data (JSON / CSV)
 
-Handles requests from the frontend
+Calls:
 
-Accepts network traffic data
+predict.py → classification
 
-Calls prediction, risk scoring, and explainability modules
+risk_score.py → severity
 
-Sends results (prediction, risk score, explanations) back to the dashboard
+shap_explainer.py → feature importance
 
-📌 Role: Integrates all backend components into a single service.
+explanation_engine.py → human-readable explanation
 
-📄 config.py
+Sends structured output to frontend
 
-Purpose: Central configuration file.
+👉 Examiner-friendly line:
 
-Stores file paths (dataset, model)
+“This file integrates detection, explainability, and risk scoring into a single API.”
 
-Defines constants like thresholds and parameters
+config.py
 
-Helps avoid hardcoded values
+Role: Central configuration file
 
-📌 Role: Improves maintainability and scalability.
+Contains:
 
-📄 requirements.txt
+Dataset paths
 
-Purpose: Dependency management.
+Model paths
 
-Lists all Python libraries used (scikit-learn, SHAP, FastAPI/Flask, pandas, numpy, etc.)
+Feature lists
 
-Ensures reproducible environment setup
+Thresholds (risk score, anomaly score)
 
-📌 Role: Makes the project easy to install and run.
+Why important:
 
-📊 backend/data/
+Avoids hardcoding
 
-Stores datasets used by the system.
+Makes deployment easier (AWS-ready)
 
-📁 raw/
+requirements.txt
 
-Contains: KDDTrain+.txt, KDDTest+.txt
+Role: Dependency management
 
-Original, unprocessed NSL-KDD dataset
+Lists:
 
-Used as input for preprocessing
+scikit-learn
 
-📌 Role: Preserves original data for reference and reproducibility.
+pandas
 
-📁 processed/
+numpy
 
-Contains: processed_data.csv
+shap
 
-Cleaned and encoded version of dataset
+fastapi / flask
 
-Used directly for training and testing
+joblib
 
-📌 Role: Speeds up training and prediction.
+Used during:
 
-⚙️ backend/preprocessing/
-📄 preprocess.py
+pip install -r requirements.txt
 
-Purpose: Data preparation module.
+🔹 data/
+data/raw/
 
-Handles missing values
+Role: Original untouched datasets
+
+KDDTrain+.txt
+
+KDDTest+.txt
+
+Why untouched?
+
+Research reproducibility
+
+Prevents data leakage
+
+Matches academic standards
+
+data/processed/
+
+Role: Machine-learning ready data
+
+processed_data.csv
+
+Encoded
+
+Normalized
+
+Label-cleaned
+
+Ready for training
+
+⚠️ Not pushed to GitHub (size + best practice)
+
+🔹 preprocessing/
+preprocess.py
+
+Role: Data transformation pipeline
+
+What it does:
+
+Loads raw NSL-KDD data
 
 Encodes categorical features
 
-Normalizes numerical features
+Normalizes numerical values
 
-Splits dataset into training and testing sets
+Converts labels → normal / attack
 
-📌 Role: Ensures clean and ML-ready data.
+Saves processed CSV
 
-🤖 backend/model/
+This explains why your data looked like:
 
-Contains all machine learning–related logic.
+-0.11248, 2.23595, -0.71982, ...
 
-📄 train_model.py
 
-Purpose: Model training module.
+👉 That’s standardized numerical ML input, not corruption.
 
-Trains Random Forest classifier on processed data
+🔹 model/
+train_model.py
 
-Evaluates initial performance
+Role: Train Random Forest classifier
 
-Saves trained model as .pkl
+What it does:
 
-📌 Role: Builds the intrusion detection intelligence.
+Loads processed data
 
-📄 predict.py
+Trains Random Forest
 
-Purpose: Prediction module.
+Evaluates accuracy
 
-Loads trained model
+Saves rf_model.pkl
 
-Predicts whether traffic is normal or an attack
+Why Random Forest?
 
-Outputs probability scores
+High accuracy
 
-📌 Role: Performs real-time or batch intrusion detection.
+Interpretable with SHAP
 
-📄 risk_score.py
+Handles tabular data well
 
-Purpose: Threat scoring module.
+predict.py
 
-Converts prediction probability into a 0–100 risk score
+Role: Inference engine
 
-Categorizes threat as Low, Medium, or High
+What it outputs:
 
-📌 Role: Transforms ML output into actionable security insight.
+prediction: Normal / Attack
 
-🔍 backend/explainability/
-📄 shap_explainer.py
+probability: Confidence of being an attack
 
-Purpose: Explainable AI module.
+Important clarification:
 
-Uses SHAP TreeExplainer for Random Forest
+✅ Probability = likelihood that traffic belongs to attack class
 
-Identifies top features influencing each prediction
+risk_score.py
 
-Generates human-readable explanations
+Role: Threat severity estimation
 
-📌 Role: Adds transparency and trust to the IDS.
+Converts probability into:
 
-💾 backend/saved_models/
-📄 rf_model.pkl
+0–30   → Low risk
+31–70  → Medium risk
+71–100 → High risk
 
-Purpose: Stored trained model.
 
-Saved Random Forest classifier
+This helps SOC teams prioritize alerts.
 
-Loaded during prediction phase
+🔹 anomaly_detection/
+isolation_forest.py
 
-📌 Role: Separates training and inference stages.
+Role: Zero-day / unknown attack detection
 
-🛠️ backend/utils/
-📄 helpers.py
+What it does:
 
-Purpose: Utility functions.
+Trains Isolation Forest on normal traffic
 
-Common reusable functions
+Flags anomalous behavior
 
-Logging, formatting, helper operations
+Works even when attack type is unseen
 
-📌 Role: Keeps code clean and modular.
+This is how you handle zero-day attacks without labels.
 
-🖥️ frontend/
+🔹 explainability/
+shap_explainer.py
 
-Contains the user interface for the IDS dashboard.
+Role: Model transparency
 
-📄 index.html
+Uses SHAP to:
 
-Purpose: Dashboard structure.
+Identify top contributing features
 
-Displays alerts, risk scores, explanations
+Explain why a sample was classified as attack
 
-Acts as main UI page
+Output:
 
-📌 Role: User interaction layer.
+Top features: src_bytes, srv_serror_rate, same_srv_rate
 
-📁 css/
-📄 styles.css
+explanation_engine.py ⭐ (Your innovation)
 
-Purpose: Styling file.
+Role: Converts SHAP output into sentences
 
-Controls layout, colors, and responsiveness
+Example logic:
 
-Improves readability and usability
+IF srv_serror_rate high AND same_srv_rate low
+→ DoS-like behavior
 
-📌 Role: Enhances user experience.
 
-📁 js/
-📄 dashboard.js
+Final explanation:
 
-Purpose: Frontend logic.
+“The traffic was classified as an attack because repeated service errors and high packet rates resemble denial-of-service activity.”
 
-Sends data to backend API
+🔥 This is what makes your project XAI-driven, not just ML.
 
-Receives prediction results
+🔹 saved_models/
 
-Dynamically updates dashboard content
+rf_model.pkl → Random Forest
 
-📌 Role: Connects UI with backend intelligence.
+if_model.pkl → Isolation Forest
 
-📚 docs/
+Used directly during prediction (no retraining needed).
 
-Contains documentation and academic materials.
+🔹 utils/
+helpers.py
 
-📄 architecture.png
+Role: Utility functions
 
-Purpose: System architecture diagram.
+Contains:
 
-Visual representation of data flow
+Data validation
 
-Used in report and presentations
+JSON formatting
 
-📄 project_report.pdf
+Logging helpers
 
-Purpose: Final academic report.
+Keeps other files clean and readable.
 
-Problem statement
+🔹 frontend/
+index.html
 
-Methodology
+Role: UI layout
 
-Results and analysis
+Displays:
 
-Conclusion and future work
+Prediction result
 
-📄 research_notes.md
+Risk score
 
-Purpose: Research reference file.
+Explanation text
 
-Notes on related work
+styles.css
 
-Ideas for novelty
+Role: UI styling
 
-Future enhancements
+Clean dashboard layout for demo/examiner.
 
-📄 README.md
+👉🏻dashboard.js
 
-Purpose: Project overview.
+Role: Frontend logic
 
-Explains how to install, run, and use the project
+Sends traffic data to backend
 
-Describes features and structure
+Receives JSON response
 
-📌 Role: First point of contact for users and evaluators.
-
-🚫 .gitignore
-
-Purpose: Version control hygiene.
-
-Prevents committing datasets, models, and temp files
-
-Keeps repository clean
-
-🏁 One-Line Summary (Use in Viva)
-
-“The backend handles intrusion detection and explainability, the frontend visualizes results, and the documentation supports academic and research presentation.”
+Dynamically updates UI
