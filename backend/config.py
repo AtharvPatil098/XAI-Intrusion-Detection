@@ -5,7 +5,7 @@ import os
 
 # Change this to switch datasets:
 # Options: "nsl_kdd" or "cicids"
-DATASET = "cicids"
+DATASET = "nsl_kdd"
 
 # BASE DIRECTORIES
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
