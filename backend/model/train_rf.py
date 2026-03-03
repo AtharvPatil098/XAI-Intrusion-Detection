@@ -8,6 +8,8 @@ from sklearn.metrics import classification_report, accuracy_score
 
 from backend.config import DATASET
 
+
+# PATH HANDLING
 def get_paths():
     dataset = DATASET.strip().lower()
 
@@ -25,6 +27,7 @@ def get_paths():
     return data_path, model_path
 
 
+# LOAD DATA
 def load_data(path):
     if not os.path.exists(path):
         raise FileNotFoundError("Processed dataset not found. Run preprocessing first.")
@@ -34,9 +37,43 @@ def load_data(path):
     return df
 
 
+# AUTO DETECT LABEL COLUMN
+def detect_label_column(df):
+    possible_labels = ["Label", "label", "class", "Class"]
+
+    for col in possible_labels:
+        if col in df.columns:
+            print(f"Using label column: {col}")
+            return col
+
+    raise ValueError("No label column found in dataset.")
+
+
+# ENCODE LABELS TO 0 / 1
+def encode_labels(df, label_col):
+
+    # If already numeric → do nothing
+    if df[label_col].dtype != "object":
+        print("Labels already numeric.")
+        return df
+
+    print("Encoding string labels to numeric (normal=0, attack=1)...")
+
+    df[label_col] = df[label_col].apply(
+        lambda x: 0 if str(x).lower() == "normal" else 1
+    )
+
+    return df
+
+
+# TRAIN MODEL
 def train_model(df):
-    X = df.drop("Label", axis=1)
-    y = df["Label"]
+
+    label_col = detect_label_column(df)
+    df = encode_labels(df, label_col)
+
+    X = df.drop(label_col, axis=1)
+    y = df[label_col]
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
@@ -63,13 +100,14 @@ def train_model(df):
 
     return model
 
-
+# SAVE MODEL
 def save_model(model, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     joblib.dump(model, path)
     print("Model saved to:", path)
 
 
+# MAIN
 def main():
     data_path, model_path = get_paths()
 
