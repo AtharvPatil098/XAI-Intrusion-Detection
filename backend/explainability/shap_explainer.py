@@ -1,64 +1,43 @@
 import shap
-import joblib
-import os
-import pandas as pd
+import numpy as np
+from backend.model.predict import models
 
-from backend.config import DATASET
+# Store SHAP explainers
+explainers = {}
 
+def load_explainers():
+    global explainers
 
-# -----------------------------
-# Load RF Model
-# -----------------------------
-def load_rf_model():
+    for dataset, model_dict in models.items():
+        rf_model = model_dict["rf"]
 
-    dataset = DATASET.strip().lower()
-
-    if dataset == "cicids":
-        model_path = "backend/saved_models/CICIDS/rf_model.pkl"
-    elif dataset == "nsl_kdd":
-        model_path = "backend/saved_models/NSL_KDD/rf_model.pkl"
-    else:
-        raise ValueError("Unsupported dataset")
-
-    if not os.path.exists(model_path):
-        raise FileNotFoundError("Trained RF model not found.")
-
-    model = joblib.load(model_path)
-    return model
+        explainer = shap.TreeExplainer(rf_model)
+        explainers[dataset] = explainer
 
 
-# -----------------------------
-# SHAP Explainer
-# -----------------------------
-def explain_prediction(input_df):
+def explain(features):
+    explanations = {}
 
-    model = load_rf_model()
+    features_array = np.array(features).reshape(1, -1)
 
-    # Create SHAP TreeExplainer
-    explainer = shap.TreeExplainer(model)
+    for dataset, explainer in explainers.items():
+        shap_values = explainer.shap_values(features_array)
 
-    # Compute SHAP values
-    shap_values = explainer.shap_values(input_df)
+        # For classification → take class 1 (attack)
+        if isinstance(shap_values, list):
+            shap_vals = shap_values[1][0]
+        else:
+            shap_vals = shap_values[0]
 
-    # For binary classification → index 1 = attack class
-    shap_values_attack = shap_values[1][0]
+        # Get top 3 important features
+        top_indices = np.argsort(np.abs(shap_vals))[-3:][::-1]
 
-    feature_names = input_df.columns
+        explanations[dataset] = [
+            {
+                "feature_index": int(idx),
+                "impact": float(shap_vals[idx])
+            }
+            for idx in top_indices
+        ]
 
-    explanation = []
-
-    for feature, value in zip(feature_names, shap_values_attack):
-        explanation.append({
-            "feature": feature,
-            "impact": float(value)
-        })
-
-    # Sort by absolute importance
-    explanation = sorted(
-        explanation,
-        key=lambda x: abs(x["impact"]),
-        reverse=True
-    )
-
-    # Return top 10 most important features
-    return explanation[:10]
+    return explanations

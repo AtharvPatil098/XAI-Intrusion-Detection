@@ -8,24 +8,20 @@ XAI-Intrusion-Detection/
 │   ├── data/
 │   │   ├── raw/
 │   │   │   ├── NSL_KDD/
-│   │   │   │   ├── KDDTrain+.txt
-│   │   │   │   └── KDDTest+.txt
-│   │   │   │
 │   │   │   └── CICIDS/
-│   │   │       ├── Friday-Afternoon-DDos.csv
-│   │   │       └── Friday-Morning.csv
 │   │   │
 │   │   └── processed/
 │   │       ├── nsl_kdd_processed.csv
 │   │       └── cicids_processed.csv
 │
 │   ├── preprocessing/
-│   │   └── preprocess.py
+│   │   ├── preprocess.py(preprocess_cicids.py, preprocess_nslkdd.py)
+│   │   └── feature_adapter.py      ← CORE (replaces complex pipeline)
 │
 │   ├── model/
 │   │   ├── train_rf.py
-│   │   ├── predict.py
-│   │   └── risk_score.py
+│   │   ├── predict.py              ← uses adapter
+│   │   └── risk_score.py           ← combines outputs
 │
 │   ├── anomaly_detection/
 │   │   └── train_if.py
@@ -33,6 +29,9 @@ XAI-Intrusion-Detection/
 │   ├── explainability/
 │   │   ├── shap_explainer.py
 │   │   └── explanation_engine.py
+│
+│   ├── realtime_detection/
+│   │   └── realtime_detector.py    ← lightweight real-time loop
 │
 │   ├── saved_models/
 │   │   ├── NSL_KDD/
@@ -42,6 +41,12 @@ XAI-Intrusion-Detection/
 │   │   └── CICIDS/
 │   │       ├── rf_model.pkl
 │   │       └── if_model.pkl
+│
+│   ├── vm_lab/
+│   │   ├── logs/(normal_traffic.log, attack_traffic.log, mixed_traffic.log)                   ← captured/simulated traffic
+|   |   |-- attack_scripts/(port_scan.sh, dos_attack.sh, brute_force.sh)
+|   |   |-- traffic_simulator.py
+│   │   └── README.md
 │
 │   └── utils/
 │       └── helpers.py
@@ -54,9 +59,54 @@ XAI-Intrusion-Detection/
 │       └── dashboard.js
 │
 ├── docs/
-│   ├── architecture.png
-│   ├── project_report.pdf
-│   └── research_notes.md
+│   └── architecture.png
 │
 ├── README.md
 └── .gitignore
+
+🔥 Key Design Decisions (Why This Works)
+✅ 1. feature_adapter.py (MOST IMPORTANT)
+✔ Converts input → model-ready format
+✔ Handles BOTH datasets
+✔ Keeps CICIDS meaningful
+✔ Avoids full flow pipeline
+
+👉 This is your “mini feature engineering + mapping layer”
+
+✅ 2. No Complex Real-Time Modules
+
+Removed:
+
+❌ traffic_capture.py
+❌ flow_manager.py
+❌ dataset_mapper.py
+❌ feature_engineering.py
+
+Replaced with:
+
+✔ feature_adapter.py (single clean solution)
+✅ 3. Real-Time Simulation (Lightweight)
+realtime_detector.py
+
+Will:
+
+✔ Read incoming data (VM / logs / sample)
+✔ Pass to adapter
+✔ Call models
+✔ Output predictions
+✅ 4. Unified Model Usage
+Input → feature_adapter → BOTH models → risk_score
+🧠 What You Achieved With This Structure
+Feature	Status
+Uses NSL-KDD	✅
+Uses CICIDS properly	✅
+Real-time feel	✅
+Complexity manageable	✅
+Avoids feature mismatch	✅
+Works with VM simulation	✅
+⚠️ Important Note
+
+This design assumes:
+
+✔ You maintain consistent feature format
+✔ Adapter aligns input correctly

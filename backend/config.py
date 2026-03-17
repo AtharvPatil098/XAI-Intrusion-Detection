@@ -90,3 +90,68 @@ elif DATASET == "cicids":
 
 else:
     raise ValueError("Invalid DATASET selected. Choose 'nsl_kdd' or 'cicids'.")
+
+
+
+# ==============================
+# ==============================
+
+
+# SYSTEM MODE CONFIGURATION
+
+
+# Enable real-time IDS (VM traffic monitoring)
+REALTIME_MODE = True
+
+
+# DATASET CONFIGURATION
+
+
+# Supported datasets (used for training + real-time mapping)
+DATASETS = ["nsl_kdd", "cicids"]
+
+# MODEL PATHS
+# Paths to trained models
+MODEL_PATHS = {
+    "nsl_kdd": {
+        "rf": "backend/saved_models/NSL_KDD/rf_model.pkl",
+        "if": "backend/saved_models/NSL_KDD/if_model.pkl"
+    },
+    "cicids": {
+        "rf": "backend/saved_models/CICIDS/rf_model.pkl",
+        "if": "backend/saved_models/CICIDS/if_model.pkl"
+    }
+}
+
+
+
+# NETWORK CONFIGURATION
+
+# Interface for packet capture 
+# Common VMware interfaces:
+# Windows: "vmnet1" (Host-only), "vmnet8" (NAT)
+# Linux: "vmnet1", "vmnet8"
+NETWORK_INTERFACE = "vmnet1"
+
+# FLOW CONFIGURATION
+# Flow timeout (in seconds)
+FLOW_TIMEOUT = 30
+
+# Minimum packets required before processing a flow
+MIN_PACKETS_PER_FLOW = 5
+
+# RISK THRESHOLDS
+# Used for alert classification
+RISK_THRESHOLDS = {
+    "normal": 0.3,
+    "suspicious": 0.6,
+    "attack": 0.8
+}
+
+# LOGGING CONFIG
+ENABLE_LOGGING = True
+LOG_FILE = "backend/logs/ids.log"
+
+
+# DEBUG MODE
+DEBUG = True

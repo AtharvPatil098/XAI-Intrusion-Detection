@@ -1,23 +1,47 @@
-def calculate_risk_score(prediction: str, probablity: float):
-    # Calculate threat risk score (0-100) based on model prediction
+from backend.config import RISK_THRESHOLDS
 
-    # Safety check
-    probablity =max(0.0, min(1.0,probablity))
+def calculate_risk(predictions):
+    scores = []
+    details = {}
 
-    if prediction == "normal":
-        risk_score = int(probablity * 30)   # Cap normal risk
+    for dataset, result in predictions.items():
+        rf_prob = result["rf_prob"]
+        if_pred = result["if_pred"]
+
+        # Convert IF output
+        if_score = 1 if if_pred == -1 else 0
+
+        # Combine RF + IF
+        combined_score = (rf_prob + if_score) / 2
+
+        scores.append(combined_score)
+
+        details[dataset] = {
+            "rf_prob": rf_prob,
+            "if_anomaly": if_pred == -1,
+            "combined_score": combined_score
+        }
+
+    # Final risk = max across datasets
+    final_risk = max(scores)
+
+    # Determine status
+    if final_risk >= RISK_THRESHOLDS["attack"]:
+        status = "ATTACK"
+    elif final_risk >= RISK_THRESHOLDS["suspicious"]:
+        status = "SUSPICIOUS"
     else:
-        risk_score = int(probablity * 100)  # Full risk range
+        status = "NORMAL"
 
-    # Assign risk level
-    if risk_score <= 30:
-        risk_level = "Low"
-    elif risk_score <= 70:
-        risk_level = "Medium"
-    elif risk_score <= 100:
-        risk_level = "High"
+    # Zero-day flag
+    zero_day = any(
+        (res["rf_pred"] == 0 and res["if_pred"] == -1)
+        for res in predictions.values()
+    )
 
-    return risk_score, risk_level
-
-#print(calculate_risk_score("attack", 0.95))
-#print(calculate_risk_score("normal", 0.30))
+    return {
+        "risk_score": round(final_risk, 3),
+        "status": status,
+        "zero_day": zero_day,
+        "details": details
+    }
