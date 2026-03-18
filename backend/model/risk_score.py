@@ -1,47 +1,28 @@
-from backend.config import RISK_THRESHOLDS
+def calculate_risk_score(prediction_result):
+    """
+    Combines RF + IF outputs into a single risk score
 
-def calculate_risk(predictions):
-    scores = []
-    details = {}
+    prediction_result: dict from predictor.predict()
+    """
 
-    for dataset, result in predictions.items():
-        rf_prob = result["rf_prob"]
-        if_pred = result["if_pred"]
+    rf_pred = prediction_result["prediction"]          # 0 or 1
+    rf_prob = prediction_result["attack_probability"]  # 0 to 1
+    anomaly = prediction_result["anomaly"]             # 0 or 1
 
-        # Convert IF output
-        if_score = 1 if if_pred == -1 else 0
+    # Weighted score
+    risk_score = (0.5 * rf_prob) + (0.3 * rf_pred) + (0.2 * anomaly)
 
-        # Combine RF + IF
-        combined_score = (rf_prob + if_score) / 2
+    return round(risk_score, 4)
 
-        scores.append(combined_score)
 
-        details[dataset] = {
-            "rf_prob": rf_prob,
-            "if_anomaly": if_pred == -1,
-            "combined_score": combined_score
-        }
+def get_risk_level(risk_score):
+    """
+    Converts numeric score → human-readable level
+    """
 
-    # Final risk = max across datasets
-    final_risk = max(scores)
-
-    # Determine status
-    if final_risk >= RISK_THRESHOLDS["attack"]:
-        status = "ATTACK"
-    elif final_risk >= RISK_THRESHOLDS["suspicious"]:
-        status = "SUSPICIOUS"
+    if risk_score < 0.3:
+        return "Low"
+    elif risk_score < 0.7:
+        return "Medium"
     else:
-        status = "NORMAL"
-
-    # Zero-day flag
-    zero_day = any(
-        (res["rf_pred"] == 0 and res["if_pred"] == -1)
-        for res in predictions.values()
-    )
-
-    return {
-        "risk_score": round(final_risk, 3),
-        "status": status,
-        "zero_day": zero_day,
-        "details": details
-    }
+        return "High"
