@@ -56,16 +56,20 @@ print(score, level)
 #===================
 #===================
 
-from backend.model.predict import predictor
-from backend.explainability.explanation_engine import explanation_engine
-import pandas as pd
+# from backend.model.predict import predictor
+# from backend.explainability.explanation_engine import explanation_engine
+# import pandas as pd
 
-df = pd.read_csv("backend/data/processed/nsl_kdd_processed.csv", nrows=1)
+# df = pd.read_csv("backend/data/processed/nsl_kdd_processed.csv", nrows=1)
 
-sample = df.drop(columns=["label"]).iloc[0].to_dict()
+# sample = df.drop(columns=["label"]).iloc[0].to_dict()
 
-prediction = predictor.predict(sample, "nsl_kdd")
+# prediction = predictor.predict(sample, "nsl_kdd")
 
-explanation = explanation_engine.explain(sample, "nsl_kdd", prediction)
+# explanation = explanation_engine.explain(sample, "nsl_kdd", prediction)
 
-print(explanation)
+# print(explanation)
+
+#======================
+#======================
+
