@@ -14,8 +14,8 @@ import joblib
 from config import DATA_RAW_NSLKDD, DATA_PROCESSED, NSL_KDD_COLUMNS, MODELS_NSLKDD
 
 # ── File paths ────────────────────────────────────────────────────────────────
-TRAIN_FILE = os.path.join(DATA_RAW_NSLKDD, "KDDTrain_.txt")
-TEST_FILE  = os.path.join(DATA_RAW_NSLKDD, "KDDTest_.txt")
+TRAIN_FILE = os.path.join(DATA_RAW_NSLKDD, "KDDTrain+.txt")
+TEST_FILE  = os.path.join(DATA_RAW_NSLKDD, "KDDTest+.txt")
 OUT_FILE   = os.path.join(DATA_PROCESSED,  "nsl_kdd_processed.csv")
 
 # ── Attack label → category mapping ──────────────────────────────────────────

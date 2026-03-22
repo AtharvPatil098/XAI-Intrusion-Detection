@@ -34,12 +34,13 @@ app = FastAPI(
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
-if os.path.exists(FRONTEND_DIR):
-    app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+SOC_DIR      = os.path.join(FRONTEND_DIR, "soc")
 
-SOC_DIR = os.path.join(FRONTEND_DIR, "soc")
+# /soc must be mounted BEFORE /dashboard (more specific path first)
 if os.path.exists(SOC_DIR):
-    app.mount("/soc", StaticFiles(directory=SOC_DIR, html=True), name="soc")
+    app.mount("/soc",       StaticFiles(directory=SOC_DIR,      html=True), name="soc")
+if os.path.exists(FRONTEND_DIR):
+    app.mount("/dashboard", StaticFiles(directory=FRONTEND_DIR, html=True), name="dashboard")
 
 
 # ── Model registry ────────────────────────────────────────────────────────────
@@ -133,8 +134,9 @@ def run_dual_prediction(features: dict) -> dict:
 
 @app.get("/")
 def root():
-    index = os.path.join(FRONTEND_DIR, "index.html")
-    return FileResponse(index) if os.path.exists(index) else {"message": "XAI-IDS API — see /docs"}
+    """Redirect to the full XAI dashboard."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/dashboard")
 
 
 @app.get("/api/health")
@@ -233,22 +235,31 @@ def get_sample(dataset: str):
         raise HTTPException(404, f"Could not load sample: {e}")
 
 
+# Cache stats results — reading 2.8M row CSVs on every request is slow
+_stats_cache: dict = {}
+
 @app.get("/api/stats/{dataset}")
 def dataset_stats(dataset: str):
-    """Basic statistics about a processed dataset."""
+    """Basic statistics about a processed dataset. Result is cached after first load."""
     validate_dataset(dataset)
+
+    # Return cached result if available
+    if dataset in _stats_cache:
+        return _stats_cache[dataset]
+
     filename = "nsl_kdd_processed.csv" if dataset == "nslkdd" else "cicids_processed.csv"
     path     = os.path.join(DATA_PROCESSED, filename)
 
     if not os.path.exists(path):
         raise HTTPException(404, f"No processed data for '{dataset}'. Run preprocess script first.")
 
-    df     = pd.read_csv(path)
+    # Read only the columns we need — much faster than loading all 77 features
+    df     = pd.read_csv(path, usecols=["binary_label", "attack_category"])
     total  = len(df)
     normal = int((df["binary_label"] == 0).sum())
     attack = int((df["binary_label"] == 1).sum())
 
-    return {
+    result = {
         "dataset":               dataset,
         "total_records":         total,
         "normal":                normal,
@@ -256,8 +267,11 @@ def dataset_stats(dataset: str):
         "attack_ratio":          round(attack / total * 100, 2),
         "category_distribution": df["attack_category"].value_counts().to_dict()
                                  if "attack_category" in df.columns else {},
-        "num_features":          len(df.columns) - 3,
+        "num_features":          77 if dataset == "cicids" else 41,
     }
+
+    _stats_cache[dataset] = result   # cache so future calls are instant
+    return result
 
 
 # ── Simple GET endpoints — used by the SOC dashboard (dashboard.js) ──────────

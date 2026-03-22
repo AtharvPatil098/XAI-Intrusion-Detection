@@ -1,7 +1,8 @@
-// dashboard.js — XAI-IDS Security Operations Dashboard
+// dashboard.js — XAI-IDS Full Dashboard (auto-polling, dual mode)
 
-const BASE_URL = "http://127.0.0.1:8000";
+const API      = "http://127.0.0.1:8000";
 const POLL_MS  = 2000;
+const MAX_PTS  = 30;      // max data points on timeline
 
 // ── Clock ──────────────────────────────────────────────────────────────────
 function startClock() {
@@ -13,30 +14,249 @@ function startClock() {
 
 // ── Connection indicator ───────────────────────────────────────────────────
 function setConnection(online) {
-  document.getElementById("connDot").className   = "dot " + (online ? "online" : "offline");
+  document.getElementById("connDot").className    = "dot " + (online ? "online" : "offline");
   document.getElementById("connLabel").textContent = online ? "LIVE" : "OFFLINE";
 }
 
-// ── API fetch helper ───────────────────────────────────────────────────────
-async function api(path) {
-  const res = await fetch(BASE_URL + path);
+// ── API helpers ────────────────────────────────────────────────────────────
+async function apiGet(path) {
+  const res = await fetch(API + path);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
-// ── Traffic Chart (line) ───────────────────────────────────────────────────
-const TRAFFIC_MAX = 30;
-const trafficData = { labels: [], values: [] };
+async function apiPost(path, body) {
+  const res = await fetch(API + path, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
 
-const trafficChart = new Chart(document.getElementById("trafficChart"), {
+// ── Risk gauge ─────────────────────────────────────────────────────────────
+function updateGauge(score, level) {
+  const pct    = Math.min(score / 100, 1);
+  const total  = 251.2;
+
+  document.getElementById("gaugeFill").style.strokeDashoffset = total - pct * total;
+  document.getElementById("gaugeNeedle").setAttribute(
+    "transform", `rotate(${-90 + pct * 180} 100 100)`
+  );
+
+  const colors = { Low: "#22c55e", Medium: "#f59e0b", High: "#f97316", Critical: "#ef4444" };
+  const color  = colors[level] || "#e2e8f0";
+
+  const scoreEl = document.getElementById("gaugeScore");
+  const levelEl = document.getElementById("gaugeLevel");
+  scoreEl.textContent = score;
+  scoreEl.style.color = color;
+  levelEl.textContent = level?.toUpperCase() ?? "--";
+  levelEl.style.color = color;
+}
+
+// ── Status cards ───────────────────────────────────────────────────────────
+function updateCards(dual) {
+  const isAttack = dual.nslkdd_rf_prediction === 1 || dual.cicids_rf_prediction === 1;
+  const status   = isAttack ? "ATTACK" : "NORMAL";
+
+  const statusEl = document.getElementById("statusVal");
+  statusEl.textContent = status;
+  statusEl.className   = "card-value " + (isAttack ? "attack" : "normal");
+  document.getElementById("cardStatus").style.borderColor =
+    isAttack ? "rgba(239,68,68,0.4)" : "rgba(34,197,94,0.3)";
+
+  const riskEl = document.getElementById("riskVal");
+  riskEl.textContent = dual.risk_level ?? "--";
+  riskEl.className   = `card-value risk-${dual.risk_level}`;
+
+  document.getElementById("scoreVal").textContent = dual.risk_score ?? "--";
+
+  setText("nslRfVal", formatPred(dual.nslkdd_rf_prediction),
+          dual.nslkdd_rf_prediction === 1 ? "attack" : "normal");
+  setText("nslIfVal", formatAnom(dual.nslkdd_if_prediction),
+          dual.nslkdd_if_prediction === 1 ? "attack" : "normal");
+  setText("cicRfVal", formatPred(dual.cicids_rf_prediction),
+          dual.cicids_rf_prediction === 1 ? "attack" : "normal");
+  setText("cicIfVal", formatAnom(dual.cicids_if_prediction),
+          dual.cicids_if_prediction === 1 ? "attack" : "normal");
+}
+
+function setText(id, text, colorClass = "") {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className   = "card-value" + (colorClass ? " " + colorClass : "");
+}
+
+function formatPred(v) { return v === 1 ? "ATTACK" : v === 0 ? "NORMAL" : "--"; }
+function formatAnom(v) { return v === 1 ? "ANOMALY" : v === 0 ? "NORMAL" : "--"; }
+
+// ── Contribution bars ──────────────────────────────────────────────────────
+function updateContribs(dual) {
+  setBar("barNslRf", "pctNslRf", dual.nslkdd_rf_contribution);
+  setBar("barNslIf", "pctNslIf", dual.nslkdd_if_contribution);
+  setBar("barCicRf", "pctCicRf", dual.cicids_rf_contribution);
+  setBar("barCicIf", "pctCicIf", dual.cicids_if_contribution);
+}
+
+function setBar(barId, pctId, value) {
+  const pct = value ?? 0;
+  const bar = document.getElementById(barId);
+  const lbl = document.getElementById(pctId);
+  if (bar) bar.style.width = Math.min(pct, 100) + "%";
+  if (lbl) lbl.textContent = pct.toFixed(1) + "%";
+}
+
+// ── SHAP chart ─────────────────────────────────────────────────────────────
+const shapChart = new Chart(document.getElementById("shapChart"), {
+  type: "bar",
+  data: { labels: [], datasets: [{ data: [], backgroundColor: [], borderRadius: 4 }] },
+  options: {
+    indexAxis: "y",
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 600 },
+    scales: {
+      x: {
+        min: 0,
+        ticks: { color: "#64748b", font: { family: "JetBrains Mono", size: 11 } },
+        grid:  { color: "rgba(255,255,255,0.05)" },
+      },
+      y: {
+        ticks: { color: "#e2e8f0", font: { family: "JetBrains Mono", size: 11 } },
+        grid:  { display: false },
+      }
+    },
+    plugins: { legend: { display: false } }
+  }
+});
+
+function updateSHAP(features) {
+  const top = (features || []).slice(0, 10);
+  shapChart.data.labels                       = top.map(f => f.feature);
+  shapChart.data.datasets[0].data             = top.map(f => Math.abs(f.shap_value));
+  shapChart.data.datasets[0].backgroundColor  = top.map(f => {
+    const v = Math.abs(f.shap_value);
+    return v > 0.2  ? "rgba(239,68,68,0.75)"
+         : v > 0.1  ? "rgba(245,158,11,0.75)"
+         : "rgba(56,189,248,0.75)";
+  });
+  shapChart.update();
+}
+
+// ── AI Explanation ─────────────────────────────────────────────────────────
+
+function buildExplanation(dual, nslExp, cicExp) {
+  const container = document.getElementById("expContainer");
+
+  // ── Determine detection scenario ──────────────────────────────────────────
+  const rfAttack  = dual.nslkdd_rf_prediction === 1 || dual.cicids_rf_prediction  === 1;
+  const ifAnomaly = dual.nslkdd_if_prediction === 1 || dual.cicids_if_prediction  === 1;
+
+  // Zero-day: IF flags anomaly but RF sees nothing suspicious
+  const isZeroDay = ifAnomaly && !rfAttack;
+  // Confirmed: both RF and IF agree
+  const confirmed = rfAttack && ifAnomaly;
+
+  // Build anomaly banner (shown whenever IF fires)
+  let banner = "";
+  if (isZeroDay) {
+    banner = `
+      <div class="anomaly-banner zero-day">
+        <span class="anomaly-icon">🛸</span>
+        <div>
+          <div class="anomaly-title">POSSIBLE ZERO-DAY / UNKNOWN ATTACK</div>
+          <div class="anomaly-sub">Isolation Forest detected abnormal behaviour not matching known attack patterns. RF classifiers report normal — this may be a novel or unseen threat.</div>
+        </div>
+      </div>`;
+  } else if (confirmed) {
+    banner = `
+      <div class="anomaly-banner confirmed">
+        <span class="anomaly-icon">🚨</span>
+        <div>
+          <div class="anomaly-title">CONFIRMED ATTACK — RF + IF BOTH FLAGGED</div>
+          <div class="anomaly-sub">Both the classifier (RF) and anomaly detector (IF) agree this is malicious traffic.</div>
+        </div>
+      </div>`;
+  } else if (ifAnomaly) {
+    banner = `
+      <div class="anomaly-banner anomaly-only">
+        <span class="anomaly-icon">⚠️</span>
+        <div>
+          <div class="anomaly-title">ANOMALY DETECTED</div>
+          <div class="anomaly-sub">Isolation Forest flagged unusual traffic patterns. Monitor closely.</div>
+        </div>
+      </div>`;
+  }
+
+  // Build SHAP explanation blocks for RF models
+  const blocks = [
+    buildExpBlock("NSL-KDD RF", dual.nslkdd_rf_prediction, nslExp?.top_features),
+    buildExpBlock("CICIDS RF",  dual.cicids_rf_prediction,  cicExp?.top_features),
+  ].filter(Boolean);
+
+  const rfSection = blocks.length
+    ? blocks.join("")
+    : `<p class="exp-waiting">No SHAP data available yet.</p>`;
+
+  container.innerHTML = banner + rfSection;
+}
+
+function buildExpBlock(source, prediction, topFeatures) {
+  if (!topFeatures || topFeatures.length === 0) return null;
+
+  const isAttack  = prediction === 1;
+  const cls       = isAttack ? "attack" : "normal";
+  const icon      = isAttack ? "⚠️" : "✅";
+  const verdict   = isAttack ? "Attack detected" : "Normal traffic";
+
+  // Human-readable sentence from top 3 features
+  const top3      = topFeatures.slice(0, 3);
+  const featNames = top3.map(f => `<strong>${f.feature}</strong>`).join(", ");
+  const sentence  = isAttack
+    ? `Flagged due to high SHAP contribution from ${featNames}.`
+    : `Classified as normal. Top contributing features: ${featNames}.`;
+
+  // Max absolute value for bar scaling
+  const maxAbs = Math.max(...topFeatures.slice(0, 6).map(f => Math.abs(f.shap_value)));
+
+  // Feature rows with mini bars
+  const rows = topFeatures.slice(0, 6).map(f => {
+    const abs  = Math.abs(f.shap_value);
+    const pct  = maxAbs > 0 ? (abs / maxAbs * 100).toFixed(1) : 0;
+    const tier = abs > 0.2 ? "high" : abs > 0.1 ? "medium" : "low";
+    return `
+      <div class="exp-feat-row">
+        <span class="exp-feat-name" title="${f.feature}">${f.feature}</span>
+        <div class="exp-feat-bar-wrap">
+          <div class="exp-feat-bar ${tier}" style="width:${pct}%"></div>
+        </div>
+        <span class="exp-feat-val">${f.shap_value.toFixed(3)}</span>
+      </div>`;
+  }).join("");
+
+  return `
+    <div class="exp-block ${cls}">
+      <div class="exp-block-title">${source} · SHAP</div>
+      <div class="exp-verdict"><span class="icon">${icon}</span>${verdict} — ${sentence}</div>
+      <div class="exp-features">${rows}</div>
+    </div>`;
+}
+
+// ── Risk timeline chart ────────────────────────────────────────────────────
+const timelineData = { labels: [], values: [] };
+
+const timelineChart = new Chart(document.getElementById("timelineChart"), {
   type: "line",
   data: {
-    labels: trafficData.labels,
+    labels: timelineData.labels,
     datasets: [{
-      label: "Alerts",
-      data: trafficData.values,
+      label: "Risk Score",
+      data:  timelineData.values,
       borderColor: "#38bdf8",
-      backgroundColor: "rgba(56,189,248,0.08)",
+      backgroundColor: "rgba(56,189,248,0.07)",
       borderWidth: 2,
       pointRadius: 3,
       pointBackgroundColor: "#38bdf8",
@@ -51,7 +271,7 @@ const trafficChart = new Chart(document.getElementById("trafficChart"), {
     scales: {
       x: { display: false },
       y: {
-        min: 0,
+        min: 0, max: 100,
         ticks: { color: "#64748b", font: { family: "JetBrains Mono", size: 11 } },
         grid:  { color: "rgba(255,255,255,0.05)" },
       }
@@ -60,118 +280,91 @@ const trafficChart = new Chart(document.getElementById("trafficChart"), {
   }
 });
 
-function pushTraffic(alertCount) {
-  const time = new Date().toLocaleTimeString("en-GB", { hour12: false });
-  trafficData.labels.push(time);
-  trafficData.values.push(alertCount);
-  if (trafficData.labels.length > TRAFFIC_MAX) {
-    trafficData.labels.shift();
-    trafficData.values.shift();
+function pushTimeline(score) {
+  const ts = new Date().toLocaleTimeString("en-GB", { hour12: false });
+  timelineData.labels.push(ts);
+  timelineData.values.push(score);
+  if (timelineData.labels.length > MAX_PTS) {
+    timelineData.labels.shift();
+    timelineData.values.shift();
   }
-  trafficChart.update();
+  timelineChart.update();
 }
 
-// ── Feature Chart (horizontal bar) ────────────────────────────────────────
-const featureChart = new Chart(document.getElementById("featureChart"), {
-  type: "bar",
-  data: { labels: [], datasets: [{ data: [], backgroundColor: [], borderRadius: 4 }] },
-  options: {
-    indexAxis: "y",
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: { duration: 500 },
-    scales: {
-      x: {
-        min: 0, max: 1,
-        ticks: { color: "#64748b", font: { family: "JetBrains Mono", size: 11 } },
-        grid:  { color: "rgba(255,255,255,0.05)" },
-      },
-      y: {
-        ticks: { color: "#e2e8f0", font: { family: "JetBrains Mono", size: 11 } },
-        grid:  { display: false },
-      }
-    },
-    plugins: { legend: { display: false } }
-  }
-});
+// ── Activity log ───────────────────────────────────────────────────────────
+let logCount = 0;
 
-function updateFeatureChart(features) {
-  const top = features.slice(0, 8);
-  featureChart.data.labels = top.map(f => f.name);
-  featureChart.data.datasets[0].data  = top.map(f => f.value);
-  featureChart.data.datasets[0].backgroundColor = top.map(f =>
-    f.value > 0.7 ? "rgba(239,68,68,0.7)"
-    : f.value > 0.4 ? "rgba(245,158,11,0.7)"
-    : "rgba(56,189,248,0.7)"
-  );
-  featureChart.update();
+function addLog(dual) {
+  const container = document.getElementById("activityLog");
+  const rfAttack  = dual.nslkdd_rf_prediction === 1 || dual.cicids_rf_prediction === 1;
+  const ifAnomaly = dual.nslkdd_if_prediction === 1 || dual.cicids_if_prediction === 1;
+  const ts        = new Date().toLocaleTimeString("en-GB", { hour12: false });
+  const score     = dual.risk_score ?? "--";
+  const level     = dual.risk_level ?? "--";
+
+  // Determine log tag and style
+  let tag, cls;
+  if (rfAttack && ifAnomaly)    { tag = "ATTACK+ANOMALY";  cls = "log-attack"; }
+  else if (rfAttack)            { tag = "ATTACK";           cls = "log-attack"; }
+  else if (ifAnomaly)           { tag = "ZERO-DAY?";        cls = "log-zeroday"; }
+  else                          { tag = "NORMAL";            cls = "log-normal"; }
+
+  const div = document.createElement("div");
+  div.className   = `log-entry ${cls}`;
+  div.textContent = `[${ts}] [${tag}] risk=${level} score=${score}`;
+  container.insertBefore(div, container.firstChild);
+
+  while (container.children.length > 50) container.removeChild(container.lastChild);
+
+  logCount++;
+  document.getElementById("logCount").textContent = logCount;
 }
 
-// ── Explanation panel ──────────────────────────────────────────────────────
-function buildExplanation(features, prediction) {
-  const isAttack = prediction?.prediction === "ATTACK";
-  const top = features.slice(0, 3).map(f => `<strong>${f.name}</strong> (${f.value.toFixed(2)})`).join(", ");
-  const icon = isAttack ? "⚠️" : "✅";
-  const text = isAttack
-    ? `Potential attack detected — high contribution from ${top}.`
-    : `Traffic appears normal. Top contributing features: ${top}.`;
-
-  const el  = document.getElementById("explanation");
-  const cls = isAttack ? "attack-row" : "";
-  el.innerHTML = `<div class="explain-row ${cls}"><span class="icon">${icon}</span><span>${text}</span></div>`;
+// ── Dataset stats ──────────────────────────────────────────────────────────
+// ── Model health badges ────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const data = await apiGet("/api/health");
+    for (const [ds, status] of Object.entries(data.models)) {
+      setModelBadge(`m-${ds}-rf`, status.rf_model);
+      setModelBadge(`m-${ds}-if`, status.if_model);
+    }
+  } catch { /* ignore */ }
 }
 
-// ── Logs panel ─────────────────────────────────────────────────────────────
-function renderLogs(logs) {
-  const container = document.getElementById("logs");
-  const latest    = logs.slice(-20).reverse();
-  container.innerHTML = latest.map(line => {
-    const cls = /attack/i.test(line) ? "log-attack" : "log-normal";
-    return `<div class="log-entry ${cls}">${line}</div>`;
-  }).join("");
-  document.getElementById("logCount").textContent = logs.length;
-}
-
-// ── Status card helpers ────────────────────────────────────────────────────
-function setStatus(status) {
-  const el  = document.getElementById("statusVal");
-  el.textContent = status;
-  el.className   = "card-value " + (status === "ATTACK" ? "attack" : "normal");
-  document.getElementById("cardStatus").style.borderColor =
-    status === "ATTACK" ? "rgba(239,68,68,0.5)" : "rgba(34,197,94,0.3)";
-}
-
-function setRisk(risk) {
-  const el  = document.getElementById("riskVal");
-  el.textContent = risk;
-  el.className   = `card-value risk-${risk.toLowerCase()}`;
+function setModelBadge(id, ready) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = ready ? "READY" : "MISSING";
+  el.className   = "mbadge " + (ready ? "READY" : "MISSING");
 }
 
 // ── Main poll loop ─────────────────────────────────────────────────────────
 async function poll() {
   try {
-    const [realtime, predict, explain, logs] = await Promise.all([
-      api("/realtime"),
-      api("/predict"),
-      api("/explain"),
-      api("/logs"),
+    // Fetch dual prediction and sample record in parallel
+    const sample = await apiGet("/api/sample/nslkdd");
+    const [dual, explainRes] = await Promise.all([
+      apiPost("/api/predict/dual",  { features: sample.features }),
+      apiPost("/api/explain/dual",  { features: sample.features }),
     ]);
 
     setConnection(true);
 
-    // Cards
-    setStatus(realtime.status);
-    setRisk(realtime.risk);
-    document.getElementById("alertsVal").textContent = realtime.alerts;
-    document.getElementById("modelVal").textContent  = predict.model  ?? "--";
-    document.getElementById("confVal").textContent   =
-      predict.confidence != null ? (predict.confidence * 100).toFixed(1) + "%" : "--";
+    // Update every section
+    updateCards(dual);
+    updateGauge(dual.risk_score, dual.risk_level);
+    updateContribs(dual);
+    pushTimeline(dual.risk_score ?? 0);
+    addLog(dual);
 
-    // Charts & panels
-    pushTraffic(realtime.alerts);
-    updateFeatureChart(explain.features ?? []);
-    buildExplanation(explain.features ?? [], predict);
-    renderLogs(logs.logs ?? []);
+    // SHAP — use NSL-KDD explanation for bar chart
+    const nslExp = explainRes.nslkdd_explanation;
+    const cicExp = explainRes.cicids_explanation;
+    if (nslExp?.top_features) updateSHAP(nslExp.top_features);
+
+    // AI Explanation panel — both datasets
+    buildExplanation(dual, nslExp, cicExp);
 
   } catch (err) {
     setConnection(false);
@@ -181,5 +374,8 @@ async function poll() {
 
 // ── Init ───────────────────────────────────────────────────────────────────
 startClock();
+checkHealth();
+
 poll();
 setInterval(poll, POLL_MS);
+setInterval(checkHealth, 30000);

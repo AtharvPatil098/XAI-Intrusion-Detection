@@ -1,1 +1,1 @@
-# XAI-Intrusion-Detection
+# XAi - Intrusion Detection System
