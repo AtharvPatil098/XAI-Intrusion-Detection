@@ -1,67 +1,44 @@
+# config.py
+# Central configuration — paths and settings only.
+# Feature definitions live in the preprocessing scripts.
+
 import os
 
-# BASE PATHS
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-DATA_DIR = os.path.join(BASE_DIR, "data")
-RAW_DATA_DIR = os.path.join(DATA_DIR, "raw")
-PROCESSED_DATA_DIR = os.path.join(DATA_DIR, "processed")
+# ── Data paths ────────────────────────────────────────────────────────────────
+DATA_RAW_NSLKDD = os.path.join(BASE_DIR, "data", "raw", "NSL_KDD")
+DATA_RAW_CICIDS  = os.path.join(BASE_DIR, "data", "raw", "CICIDS")
+DATA_PROCESSED   = os.path.join(BASE_DIR, "data", "processed")
 
-MODEL_DIR = os.path.join(BASE_DIR, "saved_models")
+# ── Saved model paths ─────────────────────────────────────────────────────────
+MODELS_NSLKDD = os.path.join(BASE_DIR, "saved_models", "NSL_KDD")
+MODELS_CICIDS  = os.path.join(BASE_DIR, "saved_models", "CICIDS")
 
+# ── NSL-KDD raw column names (41 features + label + difficulty) ───────────────
+NSL_KDD_COLUMNS = [
+    "duration", "protocol_type", "service", "flag",
+    "src_bytes", "dst_bytes", "land", "wrong_fragment", "urgent",
+    "hot", "num_failed_logins", "logged_in", "num_compromised",
+    "root_shell", "su_attempted", "num_root", "num_file_creations",
+    "num_shells", "num_access_files", "num_outbound_cmds",
+    "is_host_login", "is_guest_login", "count", "srv_count",
+    "serror_rate", "srv_serror_rate", "rerror_rate", "srv_rerror_rate",
+    "same_srv_rate", "diff_srv_rate", "srv_diff_host_rate",
+    "dst_host_count", "dst_host_srv_count", "dst_host_same_srv_rate",
+    "dst_host_diff_srv_rate", "dst_host_same_src_port_rate",
+    "dst_host_srv_diff_host_rate", "dst_host_serror_rate",
+    "dst_host_srv_serror_rate", "dst_host_rerror_rate",
+    "dst_host_srv_rerror_rate", "label", "difficulty"
+]
 
-# DATASET CONFIG
-# Options: "nsl_kdd", "cicids", "all"
-DATASET = "all"
+# ── CICIDS metadata columns to drop (not features) ────────────────────────────
+CICIDS_DROP_COLS = ["Flow ID", "Source IP", "Source Port", "Destination IP", "Timestamp"]
+CICIDS_LABEL_COL = "Label"
 
+# ── Model settings ────────────────────────────────────────────────────────────
+IF_CONTAMINATION = 0.05     # Isolation Forest: expected fraction of anomalies
 
-# PROCESSED DATA PATHS
-PROCESSED_PATHS = {
-    "nsl_kdd": os.path.join(PROCESSED_DATA_DIR, "nsl_kdd_processed.csv"),
-    "cicids": os.path.join(PROCESSED_DATA_DIR, "cicids_processed.csv")
-}
-
-
-
-# MODEL PATHS
-MODEL_PATHS = {
-    "nsl_kdd": {
-        "rf": os.path.join(MODEL_DIR, "NSL_KDD", "rf_model.pkl"),
-        "if": os.path.join(MODEL_DIR, "NSL_KDD", "if_model.pkl"),
-    },
-    "cicids": {
-        "rf": os.path.join(MODEL_DIR, "CICIDS", "rf_model.pkl"),
-        "if": os.path.join(MODEL_DIR, "CICIDS", "if_model.pkl"),
-    }
-}
-
-
-
-# GENERAL SETTINGS
-RANDOM_STATE = 42
-TEST_SIZE = 0.2
-
-
-# HELPER FUNCTIONS
-def get_datasets():
-    """
-    Returns list of datasets to use
-    """
-    if DATASET == "all":
-        return ["nsl_kdd", "cicids"]
-    return [DATASET]
-
-
-def get_model_path(dataset, model_type):
-    """
-    dataset: 'nsl_kdd' or 'cicids'
-    model_type: 'rf' or 'if'
-    """
-    return MODEL_PATHS[dataset][model_type]
-
-
-def get_processed_data_path(dataset):
-    """
-    Returns processed CSV path
-    """
-    return PROCESSED_PATHS[dataset]
+# ── API settings ──────────────────────────────────────────────────────────────
+API_HOST = "0.0.0.0"
+API_PORT = 8000

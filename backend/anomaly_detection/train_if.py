@@ -1,52 +1,100 @@
-import pandas as pd
+# anomaly_detection/train_if.py
+# Trains an Isolation Forest on NORMAL (benign) traffic only.
+# The model learns what "normal" looks like and flags deviations as anomalies.
+# This enables zero-day / unknown attack detection.
+#
+# Run: python train_if.py --dataset nslkdd
+#      python train_if.py --dataset cicids
+#      python train_if.py --dataset all
+
 import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
+import argparse
 import joblib
-
+import pandas as pd
 from sklearn.ensemble import IsolationForest
+from sklearn.metrics import classification_report
 
-from backend.config import get_datasets, get_processed_data_path, get_model_path, RANDOM_STATE
+from config import DATA_PROCESSED, MODELS_NSLKDD, MODELS_CICIDS, IF_CONTAMINATION
 
 
-def train_model(dataset):
-    print(f"\n🔄 Training Isolation Forest for {dataset.upper()}...")
+# ── Shared helper ─────────────────────────────────────────────────────────────
 
-    # Load processed data
-    data_path = get_processed_data_path(dataset)
-    df = pd.read_csv(data_path)
+def load_dataset(dataset: str):
+    """Load processed CSV, scaler, and feature list. Returns None on any error."""
+    model_dir = MODELS_NSLKDD if dataset == "nslkdd" else MODELS_CICIDS
+    csv_path  = os.path.join(DATA_PROCESSED,
+                             "nsl_kdd_processed.csv" if dataset == "nslkdd" else "cicids_processed.csv")
 
-    # Use only features (ignore label)
-    X = df.drop(columns=["label"])
+    if not os.path.exists(csv_path):
+        print(f"[SKIP] {csv_path} not found. Run the matching preprocess script first.")
+        return None
 
-    # Initialize model
-    model = IsolationForest(
+    feat_path   = os.path.join(model_dir, "feature_names.pkl")
+    scaler_path = os.path.join(model_dir, "scaler.pkl")
+
+    for p in [feat_path, scaler_path]:
+        if not os.path.exists(p):
+            print(f"[ERROR] {p} not found. Run train_rf.py first (or preprocess_cicids.py for CICIDS).")
+            return None
+
+    df           = pd.read_csv(csv_path)
+    feature_cols = joblib.load(feat_path)
+    scaler       = joblib.load(scaler_path)
+
+    missing = [f for f in feature_cols if f not in df.columns]
+    if missing:
+        print(f"[ERROR] {len(missing)} features missing from CSV: {missing[:5]}")
+        return None
+
+    return df, feature_cols, scaler, model_dir
+
+
+# ── Training ──────────────────────────────────────────────────────────────────
+
+def train(dataset: str):
+    print(f"\n=== Training Isolation Forest — {dataset.upper()} (normal traffic only) ===")
+
+    result = load_dataset(dataset)
+    if result is None:
+        return
+
+    df, feature_cols, scaler, model_dir = result
+
+    # Train ONLY on normal/benign traffic — IF learns what "normal" looks like
+    normal_df = df[df["binary_label"] == 0]
+    print(f"  Normal samples: {len(normal_df):,}")
+
+    X_normal = scaler.transform(normal_df[feature_cols].values)
+
+    clf = IsolationForest(
         n_estimators=100,
-        contamination=0.1,  # assumes ~10% anomalies
-        random_state=RANDOM_STATE,
+        contamination=IF_CONTAMINATION,
+        random_state=42,
         n_jobs=-1
     )
+    clf.fit(X_normal)
 
-    # Train model
-    model.fit(X)
+    # Evaluate on the full dataset (normal + attack)
+    all_X    = scaler.transform(df[feature_cols].values)
+    preds    = clf.predict(all_X)           # IF returns 1=normal, -1=anomaly
+    preds_b  = (preds == -1).astype(int)    # convert to 0=normal, 1=anomaly
+    true_lab = df["binary_label"].values
+    print(classification_report(true_lab, preds_b, target_names=["Normal", "Anomaly"]))
 
-    # Save model
-    model_path = get_model_path(dataset, "if")
-
-    os.makedirs(os.path.dirname(model_path), exist_ok=True)
-    joblib.dump(model, model_path)
-
-    print(f"💾 Model saved at: {model_path}")
+    joblib.dump(clf, os.path.join(model_dir, "if_model.pkl"))
+    print(f"Saved → {model_dir}/if_model.pkl")
 
 
-def main():
-    print("🚀 Starting Isolation Forest Training...")
-
-    datasets = get_datasets()
-
-    for dataset in datasets:
-        train_model(dataset)
-
-    print("\n✅ All Isolation Forest models trained successfully!")
-
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset", choices=["nslkdd", "cicids", "all"], default="all")
+    args = parser.parse_args()
+
+    datasets = ["nslkdd", "cicids"] if args.dataset == "all" else [args.dataset]
+    for ds in datasets:
+        train(ds)

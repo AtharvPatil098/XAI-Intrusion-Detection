@@ -1,70 +1,48 @@
-import shap
-import joblib
-import numpy as np
+# explainability/shap_explainer.py
+# SHAP TreeExplainer wrapper for the Random Forest model.
 
-from backend.config import get_model_path
-from backend.preprocessing.feature_adapter import adapter
+import numpy as np
+import shap
 
 
 class SHAPExplainer:
-    def __init__(self):
-        self.models = {
-            "nsl_kdd": self._load_model("nsl_kdd"),
-            "cicids": self._load_model("cicids")
-        }
+    """
+    Computes SHAP values for a fitted RandomForest model.
 
-        self.explainers = {
-            dataset: shap.TreeExplainer(model)
-            for dataset, model in self.models.items()
-        }
+    Usage:
+        explainer = SHAPExplainer(rf_model, feature_names)
+        result    = explainer.explain(X_scaled, top_n=10)
+    """
 
-    def _load_model(self, dataset):
-        path = get_model_path(dataset, "rf")
-        return joblib.load(path)
+    def __init__(self, rf_model, feature_names: list):
+        self.explainer     = shap.TreeExplainer(rf_model)
+        self.feature_names = feature_names
 
-    def explain(self, input_data, dataset):
+    def explain(self, X_scaled: np.ndarray, top_n: int = 10) -> dict:
         """
-        Returns SHAP feature contributions
+        Returns the top_n features with the largest impact on the prediction.
+
+        X_scaled : (1, n_features) scaled numpy array
+        Returns  : {"top_features": [...], "base_value": float}
         """
+        shap_values = self.explainer.shap_values(X_scaled)
 
-        # Step 1: Adapt input
-        X = adapter.transform(input_data, dataset)
+        # For binary classification shap_values is [class0_vals, class1_vals]
+        # We want class 1 (attack) SHAP values
+        sv = shap_values[1][0] if isinstance(shap_values, list) else shap_values[0]
 
-        # Step 2: Get explainer
-        explainer = self.explainers[dataset]
+        # Build list sorted by absolute impact
+        feature_impacts = [
+            {"feature": name, "shap_value": float(sv[i])}
+            for i, name in enumerate(self.feature_names)
+        ]
+        feature_impacts.sort(key=lambda x: abs(x["shap_value"]), reverse=True)
 
-        # Step 3: Compute SHAP values
-        shap_values = explainer.shap_values(X)
+        # Base value = expected model output before seeing any features
+        base = self.explainer.expected_value
+        base_value = float(base[1] if isinstance(base, (list, np.ndarray)) else base)
 
-        # For binary classification → take class 1 (attack)
-        
-        # Handle different SHAP output formats
-        if isinstance(shap_values, list):
-            shap_values = shap_values[1]  # class 1 (attack)
-
-        shap_values = np.array(shap_values)
-
-        # Ensure correct shape → (1, num_features)
-        if len(shap_values.shape) == 3:
-            shap_values = shap_values[0]
-
-        # Step 4: Map feature → importance
-        feature_names = X.columns
-
-        
-
-        contributions = {}
-
-        for feature, value in zip(feature_names, shap_values[0]):
-            value = np.array(value)
-
-            # Flatten and take first element safely
-            scalar_value = float(value.flatten()[0])
-
-            contributions[feature] = scalar_value
-
-        return contributions
-
-
-# Singleton instance
-shap_explainer = SHAPExplainer()
+        return {
+            "top_features": feature_impacts[:top_n],
+            "base_value":   base_value,
+        }

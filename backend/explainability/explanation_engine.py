@@ -1,85 +1,57 @@
-from backend.explainability.shap_explainer import shap_explainer
-from backend.model.risk_score import calculate_risk_score, get_risk_level
+# explainability/explanation_engine.py
+# High-level wrapper: loads RF model and runs SHAP explanations.
+
+import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
+import joblib
+
+from config import MODELS_NSLKDD, MODELS_CICIDS
+from explainability.shap_explainer import SHAPExplainer
+from preprocessing.feature_adapter import FeatureAdapter
 
 
 class ExplanationEngine:
-    def __init__(self):
-        pass
+    """
+    Generates SHAP feature explanations for a single prediction.
 
-    def get_top_features(self, shap_values, top_n=5):
-        """
-        Get top contributing features
-        """
-        sorted_features = sorted(
-            shap_values.items(),
-            key=lambda x: abs(x[1]),
-            reverse=True
-        )
+    Usage:
+        engine = ExplanationEngine("nslkdd")
+        result = engine.explain({"duration": 0, "protocol_type": "tcp", ...})
+    """
 
-        return sorted_features[:top_n]
+    def __init__(self, dataset: str):
+        self.dataset   = dataset.lower()
+        self.adapter   = FeatureAdapter(dataset)
+        self.explainer = None
+        self.scaler    = None
+        self._load()
 
-    def generate_reason(self, top_features):
-        """
-        Convert features → human-readable reasoning
-        """
-        feature_names = [feat for feat, _ in top_features]
+    def _load(self):
+        model_dir = MODELS_NSLKDD if self.dataset == "nslkdd" else MODELS_CICIDS
+        rf_path   = os.path.join(model_dir, "rf_model.pkl")
+        feat_path = os.path.join(model_dir, "feature_names.pkl")
+        sc_path   = os.path.join(model_dir, "scaler.pkl")
 
-        # Simple mapping (can expand later)
-        mapping = {
-            "src_bytes": "high source data transfer",
-            "dst_bytes": "high destination data transfer",
-            "count": "high number of connections",
-            "srv_count": "frequent service requests",
-            "flow_bytes_per_sec": "high traffic flow rate",
-            "flow_packets_per_sec": "high packet rate",
-        }
+        if not os.path.exists(rf_path):
+            print(f"[ExplanationEngine] RF model not found for '{self.dataset}'. Train first.")
+            return
 
-        reasons = []
+        rf_model      = joblib.load(rf_path)
+        feature_names = (joblib.load(feat_path) if os.path.exists(feat_path)
+                         else self.adapter.get_feature_names())
 
-        for feat in feature_names:
-            for key in mapping:
-                if key in feat:
-                    reasons.append(mapping[key])
-                    break
+        self.explainer = SHAPExplainer(rf_model, feature_names)
+        self.scaler    = joblib.load(sc_path) if os.path.exists(sc_path) else None
 
-        # fallback if no mapping found
-        if not reasons:
-            reasons = feature_names[:3]
+    def explain(self, input_dict: dict, top_n: int = 10) -> dict:
+        """Return SHAP explanation for the given feature dict."""
+        if self.explainer is None:
+            return {"error": "Model not trained yet. Run train_rf.py first."}
 
-        return reasons
+        X = self.adapter.adapt(input_dict)
+        if self.scaler:
+            X = self.scaler.transform(X)
 
-    def explain(self, input_data, dataset, prediction_result):
-        """
-        Full explanation pipeline
-        """
-
-        # Step 1: Get SHAP values
-        shap_values = shap_explainer.explain(input_data, dataset)
-
-        # Step 2: Top features
-        top_features = self.get_top_features(shap_values)
-
-        # Step 3: Generate reasons
-        reasons = self.generate_reason(top_features)
-
-        # Step 4: Risk score
-        risk_score = calculate_risk_score(prediction_result)
-        risk_level = get_risk_level(risk_score)
-
-        # Step 5: Final message
-        if prediction_result["prediction"] == 1:
-            message = f"⚠️ Potential attack detected due to {', '.join(reasons)}."
-        else:
-            message = f"✅ Normal traffic with minor variations in {', '.join(reasons)}."
-
-        return {
-            "risk_score": risk_score,
-            "risk_level": risk_level,
-            "top_features": top_features,
-            "reason": reasons,
-            "message": message
-        }
-
-
-# Singleton
-explanation_engine = ExplanationEngine()
+        return self.explainer.explain(X, top_n=top_n)

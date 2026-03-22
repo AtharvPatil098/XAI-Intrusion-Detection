@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>XAI-IDS — Security Operations Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <span class="logo-icon">⬡</span>
+      <span>XAI<strong>IDS</strong></span>
+    </div>
+    <div class="header-right">
+      <span id="clock" class="mono">--:--:--</span>
+      <span class="dot" id="connDot"></span>
+      <span id="connLabel" class="mono">CONNECTING</span>
+    </div>
+  </header>
+
+  <!-- Status Cards -->
+  <section class="cards">
+    <div class="card" id="cardStatus">
+      <div class="card-label">SYSTEM STATUS</div>
+      <div class="card-value" id="statusVal">--</div>
+    </div>
+    <div class="card">
+      <div class="card-label">RISK LEVEL</div>
+      <div class="card-value" id="riskVal">--</div>
+    </div>
+    <div class="card">
+      <div class="card-label">ALERTS</div>
+      <div class="card-value mono" id="alertsVal">--</div>
+    </div>
+    <div class="card">
+      <div class="card-label">MODEL</div>
+      <div class="card-value sm" id="modelVal">--</div>
+    </div>
+    <div class="card">
+      <div class="card-label">CONFIDENCE</div>
+      <div class="card-value mono" id="confVal">--</div>
+    </div>
+  </section>
+
+  <!-- Main Grid -->
+  <main class="grid">
+
+    <!-- Traffic Chart -->
+    <div class="panel">
+      <div class="panel-header">
+        <span>Live Traffic</span>
+        <span class="badge pulse">● LIVE</span>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="trafficChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Feature Importance -->
+    <div class="panel">
+      <div class="panel-header">
+        <span>SHAP Feature Importance</span>
+        <span class="badge">XAI</span>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="featureChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Explanation -->
+    <div class="panel">
+      <div class="panel-header">
+        <span>AI Explanation</span>
+      </div>
+      <div id="explanation" class="explanation">
+        <p class="muted">Awaiting data…</p>
+      </div>
+    </div>
+
+    <!-- Logs -->
+    <div class="panel">
+      <div class="panel-header">
+        <span>System Logs</span>
+        <span class="badge mono" id="logCount">0</span>
+      </div>
+      <div id="logs" class="logs"></div>
+    </div>
+
+  </main>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

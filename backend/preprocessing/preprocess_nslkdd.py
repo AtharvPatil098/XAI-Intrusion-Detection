@@ -1,94 +1,104 @@
-import pandas as pd
+# preprocessing/preprocess_nslkdd.py
+# Merges KDDTrain_ + KDDTest_, encodes categoricals, saves processed CSV.
+#
+# Run: python preprocess_nslkdd.py
+
 import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-from backend.config import RAW_DATA_DIR, get_processed_data_path
+import pandas as pd
+from sklearn.preprocessing import LabelEncoder
+import joblib
+
+from config import DATA_RAW_NSLKDD, DATA_PROCESSED, NSL_KDD_COLUMNS, MODELS_NSLKDD
+
+# ── File paths ────────────────────────────────────────────────────────────────
+TRAIN_FILE = os.path.join(DATA_RAW_NSLKDD, "KDDTrain_.txt")
+TEST_FILE  = os.path.join(DATA_RAW_NSLKDD, "KDDTest_.txt")
+OUT_FILE   = os.path.join(DATA_PROCESSED,  "nsl_kdd_processed.csv")
+
+# ── Attack label → category mapping ──────────────────────────────────────────
+# Moved here from config.py — only used during preprocessing
+ATTACK_CATEGORIES = {
+    "normal": "normal",
+    # DoS
+    "back": "dos", "land": "dos", "neptune": "dos", "pod": "dos",
+    "smurf": "dos", "teardrop": "dos", "apache2": "dos", "udpstorm": "dos",
+    "processtable": "dos", "worm": "dos", "mailbomb": "dos",
+    # Probe
+    "ipsweep": "probe", "nmap": "probe", "portsweep": "probe",
+    "satan": "probe", "mscan": "probe", "saint": "probe",
+    # R2L (remote to local)
+    "ftp_write": "r2l", "guess_passwd": "r2l", "imap": "r2l",
+    "multihop": "r2l", "phf": "r2l", "spy": "r2l",
+    "warezclient": "r2l", "warezmaster": "r2l", "sendmail": "r2l",
+    "named": "r2l", "snmpattack": "r2l", "snmpguess": "r2l",
+    "xlock": "r2l", "xsnoop": "r2l", "httptunnel": "r2l",
+    # U2R (user to root)
+    "buffer_overflow": "u2r", "loadmodule": "u2r", "perl": "u2r",
+    "rootkit": "u2r", "ps": "u2r", "sqlattack": "u2r", "xterm": "u2r",
+}
+
+# Categorical features that need label encoding (text → integer)
+CATEGORICAL_COLS = ["protocol_type", "service", "flag"]
 
 
-def load_data():
-    # NSL-KDD files (adjust if needed)
-    train_path = os.path.join(RAW_DATA_DIR, "NSL_KDD", "KDDTrain+.txt")
-    test_path = os.path.join(RAW_DATA_DIR, "NSL_KDD", "KDDTest+.txt")
+# ── Step functions ────────────────────────────────────────────────────────────
 
-    # Column names (NSL-KDD has no headers)
-    columns = [
-        "duration","protocol_type","service","flag","src_bytes","dst_bytes",
-        "land","wrong_fragment","urgent","hot","num_failed_logins",
-        "logged_in","num_compromised","root_shell","su_attempted","num_root",
-        "num_file_creations","num_shells","num_access_files","num_outbound_cmds",
-        "is_host_login","is_guest_login","count","srv_count","serror_rate",
-        "srv_serror_rate","rerror_rate","srv_rerror_rate","same_srv_rate",
-        "diff_srv_rate","srv_diff_host_rate","dst_host_count",
-        "dst_host_srv_count","dst_host_same_srv_rate",
-        "dst_host_diff_srv_rate","dst_host_same_src_port_rate",
-        "dst_host_srv_diff_host_rate","dst_host_serror_rate",
-        "dst_host_srv_serror_rate","dst_host_rerror_rate",
-        "dst_host_srv_rerror_rate","label","difficulty"
-    ]
-
-    train_df = pd.read_csv(train_path, names=columns)
-    test_df = pd.read_csv(test_path, names=columns)
-
-    df = pd.concat([train_df, test_df], ignore_index=True)
-
+def load_raw_files():
+    """Load train and test txt files and combine into one DataFrame."""
+    print("[NSL-KDD] Loading train and test files...")
+    train = pd.read_csv(TRAIN_FILE, header=None, names=NSL_KDD_COLUMNS)
+    test  = pd.read_csv(TEST_FILE,  header=None, names=NSL_KDD_COLUMNS)
+    df = pd.concat([train, test], ignore_index=True)
+    print(f"[NSL-KDD] Total records: {len(df):,}")
     return df
 
 
-def clean_data(df):
-    # Drop unnecessary column
-    if "difficulty" in df.columns:
-        df = df.drop(columns=["difficulty"])
-
-    # Remove duplicates
-    df = df.drop_duplicates()
-
-    # Handle missing values (just in case)
-    df = df.fillna(0)
-
+def build_labels(df):
+    """Add attack_category and binary_label columns, drop raw label."""
+    df["attack_category"] = df["label"].str.strip().str.lower().map(
+        lambda x: ATTACK_CATEGORIES.get(x, "other")
+    )
+    df["binary_label"] = (df["attack_category"] != "normal").astype(int)
+    df.drop(columns=["label", "difficulty"], inplace=True)
     return df
 
 
-def encode_categorical(df):
-    categorical_cols = ["protocol_type", "service", "flag"]
+def encode_categoricals(df):
+    """Label-encode protocol_type, service, flag. Save encoders for inference."""
+    encoders = {}
+    for col in CATEGORICAL_COLS:
+        le = LabelEncoder()
+        df[col] = le.fit_transform(df[col].astype(str))
+        encoders[col] = le
 
-    df = pd.get_dummies(df, columns=categorical_cols)
-
+    joblib.dump(encoders, os.path.join(MODELS_NSLKDD, "label_encoders.pkl"))
+    print(f"[NSL-KDD] Saved label encoders for: {CATEGORICAL_COLS}")
     return df
 
 
-def process_labels(df):
-    # Convert attack labels → binary
-    df["label"] = df["label"].apply(lambda x: 0 if x == "normal" else 1)
+def save(df):
+    """Save processed DataFrame to CSV."""
+    df.to_csv(OUT_FILE, index=False)
+    print(f"[NSL-KDD] Saved → {OUT_FILE}")
+    print(f"[NSL-KDD] Shape : {df.shape}")
+    print(f"[NSL-KDD] Labels:\n{df['binary_label'].value_counts().to_string()}")
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def preprocess_nslkdd():
+    os.makedirs(DATA_PROCESSED, exist_ok=True)
+    os.makedirs(MODELS_NSLKDD,  exist_ok=True)
+
+    df = load_raw_files()
+    df = build_labels(df)
+    df = encode_categoricals(df)
+    save(df)
     return df
-
-
-def standardize_columns(df):
-    # Lowercase + clean names
-    df.columns = [
-        col.strip().lower().replace(" ", "_").replace("/", "_per_")
-        for col in df.columns
-    ]
-    return df
-
-
-def save_data(df):
-    output_path = get_processed_data_path("nsl_kdd")
-    df.to_csv(output_path, index=False)
-    print(f"✅ NSL-KDD processed data saved at: {output_path}")
-
-
-def main():
-    print("🔄 Processing NSL-KDD dataset...")
-
-    df = load_data()
-    df = clean_data(df)
-    df = encode_categorical(df)
-    df = process_labels(df)
-    df = standardize_columns(df)
-
-    #save_data(df)
-
-    print("✅ Preprocessing complete!")
 
 
 if __name__ == "__main__":
-    main()
+    preprocess_nslkdd()
