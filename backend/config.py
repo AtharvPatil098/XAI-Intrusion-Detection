@@ -39,6 +39,9 @@ CICIDS_LABEL_COL = "Label"
 # ── Model settings ────────────────────────────────────────────────────────────
 IF_CONTAMINATION = 0.05     # Isolation Forest: expected fraction of anomalies
 
+# ── Logs path ─────────────────────────────────────────────────────────────────
+LOGS_DIR = os.path.join(BASE_DIR, "logs")
+
 # ── API settings ──────────────────────────────────────────────────────────────
 API_HOST = "0.0.0.0"
 API_PORT = 8000

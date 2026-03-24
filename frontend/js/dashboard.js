@@ -4,6 +4,8 @@ const API      = "http://127.0.0.1:8000";
 const POLL_MS  = 2000;
 const MAX_PTS  = 30;      // max data points on timeline
 
+let _lastTs = null;       // timestamp of last processed prediction — skip duplicates
+
 // ── Clock ──────────────────────────────────────────────────────────────────
 function startClock() {
   const el = document.getElementById("clock");
@@ -81,6 +83,43 @@ function updateCards(dual) {
           dual.cicids_rf_prediction === 1 ? "attack" : "normal");
   setText("cicIfVal", formatAnom(dual.cicids_if_prediction),
           dual.cicids_if_prediction === 1 ? "attack" : "normal");
+
+  // Attack type card
+  updateAttackType(dual.attack_type);
+}
+
+function updateAttackType(attackType) {
+  const el  = document.getElementById("attackTypeVal");
+  const card = document.getElementById("cardAttackType");
+  if (!el || !attackType) return;
+
+  el.textContent = attackType;
+
+  // Colour code by category
+  const t = attackType.toLowerCase();
+  let cls = "attack-unknown";
+  if (t === "normal")                    cls = "attack-normal";
+  else if (t.includes("dos"))            cls = "attack-dos";
+  else if (t.includes("probe") ||
+           t.includes("scan"))           cls = "attack-probe";
+  else if (t.includes("brute"))         cls = "attack-brute";
+  else if (t.includes("web"))           cls = "attack-web";
+  else if (t.includes("zero-day") ||
+           t.includes("unknown"))       cls = "attack-zeroday";
+
+  el.className = `card-value sm ${cls}`;
+
+  // Also highlight the card border
+  const borderColors = {
+    "attack-dos":     "rgba(239,68,68,0.4)",
+    "attack-probe":   "rgba(249,115,22,0.4)",
+    "attack-brute":   "rgba(245,158,11,0.4)",
+    "attack-web":     "rgba(167,139,250,0.4)",
+    "attack-zeroday": "rgba(253,230,138,0.3)",
+    "attack-normal":  "rgba(34,197,94,0.3)",
+    "attack-unknown": "rgba(100,116,139,0.2)",
+  };
+  if (card) card.style.borderColor = borderColors[cls] || "";
 }
 
 function setText(id, text, colorClass = "") {
@@ -168,7 +207,10 @@ function buildExplanation(dual, nslExp, cicExp) {
         <span class="anomaly-icon">🛸</span>
         <div>
           <div class="anomaly-title">POSSIBLE ZERO-DAY / UNKNOWN ATTACK</div>
-          <div class="anomaly-sub">Isolation Forest detected abnormal behaviour not matching known attack patterns. RF classifiers report normal — this may be a novel or unseen threat.</div>
+          <div class="anomaly-sub">
+            ${dual.attack_type ? `<strong>Type: ${dual.attack_type}</strong> — ` : ""}
+            Isolation Forest detected abnormal behaviour not matching known attack patterns. RF classifiers report normal — this may be a novel or unseen threat.
+          </div>
         </div>
       </div>`;
   } else if (confirmed) {
@@ -177,7 +219,10 @@ function buildExplanation(dual, nslExp, cicExp) {
         <span class="anomaly-icon">🚨</span>
         <div>
           <div class="anomaly-title">CONFIRMED ATTACK — RF + IF BOTH FLAGGED</div>
-          <div class="anomaly-sub">Both the classifier (RF) and anomaly detector (IF) agree this is malicious traffic.</div>
+          <div class="anomaly-sub">
+            ${dual.attack_type ? `<strong>Type: ${dual.attack_type}</strong> — ` : ""}
+            Both the classifier (RF) and anomaly detector (IF) agree this is malicious traffic.
+          </div>
         </div>
       </div>`;
   } else if (ifAnomaly) {
@@ -186,7 +231,10 @@ function buildExplanation(dual, nslExp, cicExp) {
         <span class="anomaly-icon">⚠️</span>
         <div>
           <div class="anomaly-title">ANOMALY DETECTED</div>
-          <div class="anomaly-sub">Isolation Forest flagged unusual traffic patterns. Monitor closely.</div>
+          <div class="anomaly-sub">
+            ${dual.attack_type ? `<strong>Type: ${dual.attack_type}</strong> — ` : ""}
+            Isolation Forest flagged unusual traffic patterns. Monitor closely.
+          </div>
         </div>
       </div>`;
   }
@@ -294,24 +342,28 @@ function pushTimeline(score) {
 // ── Activity log ───────────────────────────────────────────────────────────
 let logCount = 0;
 
-function addLog(dual) {
+function addLog(dual, source = "random") {
   const container = document.getElementById("activityLog");
   const rfAttack  = dual.nslkdd_rf_prediction === 1 || dual.cicids_rf_prediction === 1;
   const ifAnomaly = dual.nslkdd_if_prediction === 1 || dual.cicids_if_prediction === 1;
   const ts        = new Date().toLocaleTimeString("en-GB", { hour12: false });
   const score     = dual.risk_score ?? "--";
   const level     = dual.risk_level ?? "--";
+  const src       = source === "live" ? "LIVE" : "DEMO";
 
   // Determine log tag and style
   let tag, cls;
-  if (rfAttack && ifAnomaly)    { tag = "ATTACK+ANOMALY";  cls = "log-attack"; }
-  else if (rfAttack)            { tag = "ATTACK";           cls = "log-attack"; }
-  else if (ifAnomaly)           { tag = "ZERO-DAY?";        cls = "log-zeroday"; }
-  else                          { tag = "NORMAL";            cls = "log-normal"; }
+  if (rfAttack && ifAnomaly)    { tag = "ATTACK+ANOMALY";  cls = "log-attack";   }
+  else if (rfAttack)            { tag = "ATTACK";           cls = "log-attack";   }
+  else if (ifAnomaly)           { tag = "ZERO-DAY?";        cls = "log-zeroday";  }
+  else                          { tag = "NORMAL";            cls = "log-normal";   }
+
+  const atype = dual.attack_type && dual.attack_type !== "Normal"
+               ? ` type=${dual.attack_type}` : "";
 
   const div = document.createElement("div");
   div.className   = `log-entry ${cls}`;
-  div.textContent = `[${ts}] [${tag}] risk=${level} score=${score}`;
+  div.textContent = `[${ts}] [${src}] [${tag}] risk=${level} score=${score}${atype}`;
   container.insertBefore(div, container.firstChild);
 
   while (container.children.length > 50) container.removeChild(container.lastChild);
@@ -342,29 +394,41 @@ function setModelBadge(id, ready) {
 // ── Main poll loop ─────────────────────────────────────────────────────────
 async function poll() {
   try {
-    // Fetch dual prediction and sample record in parallel
-    const sample = await apiGet("/api/sample/nslkdd");
-    const [dual, explainRes] = await Promise.all([
-      apiPost("/api/predict/dual",  { features: sample.features }),
-      apiPost("/api/explain/dual",  { features: sample.features }),
-    ]);
+    // /api/latest returns live traffic if flow_extractor is running,
+    // otherwise falls back to a random sample automatically
+    const latest = await apiGet("/api/latest");
+    const dual   = latest.prediction;
+    const source = latest.source;
+    const ts     = latest.ts ?? null;
 
     setConnection(true);
 
-    // Update every section
+    // Show source indicator in header
+    const connLabel = document.getElementById("connLabel");
+    if (connLabel) {
+      connLabel.textContent = source === "live" ? "LIVE TRAFFIC" : "LIVE · DEMO";
+    }
+
+    // Always update the gauge and cards (smooth live feel)
     updateCards(dual);
     updateGauge(dual.risk_score, dual.risk_level);
     updateContribs(dual);
     pushTimeline(dual.risk_score ?? 0);
-    addLog(dual);
 
-    // SHAP — use NSL-KDD explanation for bar chart
-    const nslExp = explainRes.nslkdd_explanation;
-    const cicExp = explainRes.cicids_explanation;
-    if (nslExp?.top_features) updateSHAP(nslExp.top_features);
+    // Only log + re-explain when the prediction is actually new
+    // (avoids duplicate log entries when no new flow has arrived yet)
+    const isNew = ts !== _lastTs;
+    if (isNew) {
+      _lastTs = ts;
+      addLog(dual, source);
 
-    // AI Explanation panel — both datasets
-    buildExplanation(dual, nslExp, cicExp);
+      // SHAP is expensive — only run when prediction changed
+      const explainRes = await apiPost("/api/explain/dual", { features: latest.features });
+      const nslExp = explainRes.nslkdd_explanation;
+      const cicExp = explainRes.cicids_explanation;
+      if (nslExp?.top_features) updateSHAP(nslExp.top_features);
+      buildExplanation(dual, nslExp, cicExp);
+    }
 
   } catch (err) {
     setConnection(false);

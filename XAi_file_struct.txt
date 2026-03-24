@@ -1,8 +1,8 @@
 XAI-Intrusion-Detection/
 │
 ├── backend/
-│   ├── app.py
-│   ├── config.py
+│   ├── app.py                      ← API layer (connects frontend)
+│   ├── config.py                   ← dataset/config settings
 │   ├── requirements.txt
 │
 │   ├── data/
@@ -15,13 +15,14 @@ XAI-Intrusion-Detection/
 │   │       └── cicids_processed.csv
 │
 │   ├── preprocessing/
-│   │   ├── preprocess.py(preprocess_cicids.py, preprocess_nslkdd.py)
-│   │   └── feature_adapter.py      ← CORE (replaces complex pipeline)
+│   │   ├── preprocess_cicids.py
+│   │   ├── preprocess_nslkdd.py
+│   │   └── feature_adapter.py      ⭐ CORE MODULE
 │
 │   ├── model/
 │   │   ├── train_rf.py
 │   │   ├── predict.py              ← uses adapter
-│   │   └── risk_score.py           ← combines outputs
+│   │   └── risk_score.py           ← combines 4 model outputs
 │
 │   ├── anomaly_detection/
 │   │   └── train_if.py
@@ -31,7 +32,7 @@ XAI-Intrusion-Detection/
 │   │   └── explanation_engine.py
 │
 │   ├── realtime_detection/
-│   │   └── realtime_detector.py    ← lightweight real-time loop
+│   │   └── realtime_detector.py    ← live simulation loop
 │
 │   ├── saved_models/
 │   │   ├── NSL_KDD/
@@ -43,9 +44,17 @@ XAI-Intrusion-Detection/
 │   │       └── if_model.pkl
 │
 │   ├── vm_lab/
-│   │   ├── logs/(normal_traffic.log, attack_traffic.log, mixed_traffic.log)                   ← captured/simulated traffic
-|   |   |-- attack_scripts/(port_scan.sh, dos_attack.sh, brute_force.sh)
-|   |   |-- traffic_simulator.py
+│   │   ├── logs/
+│   │   │   ├── normal_traffic.log
+│   │   │   ├── attack_traffic.log
+│   │   │   └── mixed_traffic.log
+│   │   │
+│   │   ├── attack_scripts/
+│   │   │   ├── port_scan.sh
+│   │   │   ├── dos_attack.sh
+│   │   │   └── brute_force.sh
+│   │   │
+│   │   ├── traffic_simulator.py
 │   │   └── README.md
 │
 │   └── utils/
@@ -63,50 +72,56 @@ XAI-Intrusion-Detection/
 │
 ├── README.md
 └── .gitignore
+🔥 WHAT CHANGED / CLEANED
+✅ 1. Preprocessing clarified
 
-🔥 Key Design Decisions (Why This Works)
-✅ 1. feature_adapter.py (MOST IMPORTANT)
-✔ Converts input → model-ready format
-✔ Handles BOTH datasets
-✔ Keeps CICIDS meaningful
-✔ Avoids full flow pipeline
+Instead of:
 
-👉 This is your “mini feature engineering + mapping layer”
+preprocess.py (combined)
 
-✅ 2. No Complex Real-Time Modules
+Now:
 
-Removed:
+preprocess_cicids.py
+preprocess_nslkdd.py
 
-❌ traffic_capture.py
-❌ flow_manager.py
-❌ dataset_mapper.py
-❌ feature_engineering.py
+✔ Better separation
+✔ Easier debugging
 
-Replaced with:
+✅ 2. feature_adapter.py clearly marked as CORE
 
-✔ feature_adapter.py (single clean solution)
-✅ 3. Real-Time Simulation (Lightweight)
-realtime_detector.py
+This is now your:
 
-Will:
+👉 “mini pipeline replacing full feature engineering system”
 
-✔ Read incoming data (VM / logs / sample)
-✔ Pass to adapter
-✔ Call models
-✔ Output predictions
-✅ 4. Unified Model Usage
-Input → feature_adapter → BOTH models → risk_score
-🧠 What You Achieved With This Structure
-Feature	Status
-Uses NSL-KDD	✅
-Uses CICIDS properly	✅
-Real-time feel	✅
-Complexity manageable	✅
-Avoids feature mismatch	✅
-Works with VM simulation	✅
-⚠️ Important Note
+✅ 3. VM lab structured properly
+vm_lab/
+  ├── logs/
+  ├── attack_scripts/
+  ├── traffic_simulator.py
 
-This design assumes:
+✔ Clean separation:
 
-✔ You maintain consistent feature format
-✔ Adapter aligns input correctly
+Logs = data
+Scripts = attacks
+Simulator = execution
+✅ 4. Model + Anomaly split
+model/                → RF (classification)
+anomaly_detection/    → IF (unsupervised)
+
+✔ Good architecture practice
+
+✅ 5. Explainability separated
+shap_explainer.py
+explanation_engine.py
+
+✔ Clean XAI pipeline
+
+🧠 FINAL UNDERSTANDING
+
+This structure is:
+
+✔ Modular
+✔ Scalable
+✔ Easy to debug
+✔ Industry-style
+

@@ -23,7 +23,7 @@ from model.risk_score import compute_risk_score, compute_dual_risk_score
 from explainability.explanation_engine import ExplanationEngine
 from utils.helpers import (numpy_to_python, sample_random_record,
                            summarise_results, summarise_dual_results)
-from config import DATA_PROCESSED, MODELS_NSLKDD, MODELS_CICIDS, API_HOST, API_PORT
+from config import DATA_PROCESSED, MODELS_NSLKDD, MODELS_CICIDS, API_HOST, API_PORT, LOGS_DIR
 
 app = FastAPI(
     title="XAI Intrusion Detection System",
@@ -116,18 +116,170 @@ def run_prediction(dataset: str, features: dict) -> dict:
     return numpy_to_python({**pred, **risk})
 
 
+def infer_attack_type(features: dict, rf_attack: bool, if_anomaly: bool) -> str:
+    """
+    Infer the attack category from feature values.
+    Uses the same features that the NSL-KDD and CICIDS models were trained on.
+    Returns a human-readable attack type string.
+    """
+    if not rf_attack and not if_anomaly:
+        return "Normal"
+
+    # Pull key features — try both NSL-KDD and CICIDS names
+    serr   = float(features.get("serror_rate", 0))
+    rerr   = float(features.get("rerror_rate", 0))
+    count  = float(features.get("count", 0))
+    diff   = float(features.get("diff_srv_rate", 0))
+    flag   = str(features.get("flag", ""))
+    proto  = str(features.get("protocol_type", ""))
+    port   = int(features.get("Destination Port", features.get("dst_port", 0)))
+    syn    = float(features.get("SYN Flag Count", features.get("syn_count", 0)))
+    rst    = float(features.get("RST Flag Count", features.get("rst_count", 0)))
+    dst_b  = float(features.get("dst_bytes", features.get("Total Length of Bwd Packets", 0)))
+    src_b  = float(features.get("src_bytes", features.get("Total Length of Fwd Packets", 0)))
+    pkts_s = float(features.get("Flow Packets/s", 0))
+
+    # ── DoS patterns ─────────────────────────────────────────────────────────
+    if serr > 0.5 and count > 50:
+        return "DoS — SYN Flood (Neptune)"
+    if syn > 200:
+        return "DoS — SYN Flood"
+    if pkts_s > 10000:
+        return "DoS — Flood Attack"
+    if proto == "icmp" and count > 50:
+        return "DoS — ICMP Flood (Smurf)"
+    if count > 200 and dst_b == 0:
+        return "DoS — UDP/Null Flood"
+
+    # ── Probe / Scan patterns ─────────────────────────────────────────────────
+    if rerr > 0.5 and diff > 0.5 and count > 20:
+        return "Probe — Port Scan"
+    if rerr > 0.3 and diff > 0.7:
+        return "Probe — Port Sweep"
+    if diff > 0.8 and count > 10:
+        return "Probe — Network Scan"
+    if flag in ("REJ", "S0") and diff > 0.3:
+        return "Probe — Stealth Scan"
+
+    # ── Brute Force patterns ──────────────────────────────────────────────────
+    if port == 22 and src_b > 0 and dst_b == 0:
+        return "Brute Force — SSH"
+    if port == 21 and src_b > 0 and dst_b == 0:
+        return "Brute Force — FTP"
+    if port in (23, 3389) and count > 5:
+        return "Brute Force — Remote Login"
+
+    # ── Web Attack patterns ───────────────────────────────────────────────────
+    if port in (80, 443, 8080) and src_b > 5000:
+        return "Web Attack"
+
+    # ── Zero-day / unknown ────────────────────────────────────────────────────
+    if if_anomaly and not rf_attack:
+        return "Unknown — Possible Zero-Day"
+
+    return "Attack — Unclassified"
+
+
 def run_dual_prediction(features: dict) -> dict:
-    """Run all 4 models simultaneously and attach combined risk score."""
+    """Run all 4 models simultaneously and attach combined risk score + attack type."""
     pred = registry.dual_predictor().predict(features)
 
-    # Extract signals — fall back to neutral values if a model isn't loaded
     nslkdd_rf_prob   = pred["nslkdd_rf_probability"][1] if pred["nslkdd_rf_probability"] else 0.5
     nslkdd_anom      = pred["nslkdd_anomaly_score"]     if pred["nslkdd_anomaly_score"] is not None else -0.3
     cicids_rf_prob   = pred["cicids_rf_probability"][1]  if pred["cicids_rf_probability"]  else 0.5
     cicids_anom      = pred["cicids_anomaly_score"]      if pred["cicids_anomaly_score"]  is not None else -0.3
 
-    risk = compute_dual_risk_score(nslkdd_rf_prob, nslkdd_anom, cicids_rf_prob, cicids_anom)
-    return numpy_to_python({**pred, **risk})
+    risk   = compute_dual_risk_score(nslkdd_rf_prob, nslkdd_anom, cicids_rf_prob, cicids_anom)
+    result = numpy_to_python({**pred, **risk})
+
+    # Infer attack type from features
+    rf_attack  = (pred["nslkdd_rf_prediction"] == 1 or pred["cicids_rf_prediction"] == 1)
+    if_anomaly = (pred["nslkdd_if_prediction"] == 1 or pred["cicids_if_prediction"] == 1)
+    result["attack_type"] = infer_attack_type(features, rf_attack, if_anomaly)
+
+    # Store as latest prediction
+    _latest["prediction"] = result
+    _latest["features"]   = features
+    _latest["source"]     = "live"
+    _latest["ts"]         = datetime.now().isoformat()
+
+    # Write to daily CSV log
+    log_writer.write(result, features, "live")
+
+    return result
+
+
+# ── Latest prediction store ───────────────────────────────────────────────────
+_latest: dict = {"prediction": None, "features": None, "source": "random", "ts": None}
+
+
+# ── Log writer ────────────────────────────────────────────────────────────────
+
+import csv
+import threading
+
+class LogWriter:
+    """
+    Appends one row per prediction to a daily CSV log file.
+    File: backend/logs/ids_log_YYYY-MM-DD.csv
+    Thread-safe — flow_extractor and dashboard poll concurrently.
+    """
+
+    COLUMNS = [
+        "timestamp", "source",
+        "src_ip", "dst_ip", "protocol",
+        "risk_level", "risk_score", "attack_type",
+        "nslkdd_rf", "nslkdd_if", "cicids_rf", "cicids_if",
+        "nslkdd_anom_score", "cicids_anom_score",
+    ]
+
+    def __init__(self, logs_dir: str):
+        self.logs_dir = logs_dir
+        self.lock     = threading.Lock()
+        os.makedirs(logs_dir, exist_ok=True)
+
+    def _log_path(self) -> str:
+        """Return today's log file path."""
+        today = datetime.now().strftime("%Y-%m-%d")
+        return os.path.join(self.logs_dir, f"ids_log_{today}.csv")
+
+    def write(self, result: dict, features: dict, source: str):
+        """Append one prediction row to today's CSV log."""
+        path       = self._log_path()
+        is_new     = not os.path.exists(path)
+
+        # Extract src/dst IPs and protocol from features if available
+        src_ip   = features.get("src_ip",         features.get("Source IP",      ""))
+        dst_ip   = features.get("dst_ip",         features.get("Destination IP", ""))
+        protocol = features.get("protocol_type",  features.get("protocol",       ""))
+
+        row = {
+            "timestamp":         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "source":            source,
+            "src_ip":            src_ip,
+            "dst_ip":            dst_ip,
+            "protocol":          protocol,
+            "risk_level":        result.get("risk_level",  ""),
+            "risk_score":        result.get("risk_score",  ""),
+            "attack_type":       result.get("attack_type", ""),
+            "nslkdd_rf":         result.get("nslkdd_rf_prediction",  ""),
+            "nslkdd_if":         result.get("nslkdd_if_prediction",  ""),
+            "cicids_rf":         result.get("cicids_rf_prediction",  ""),
+            "cicids_if":         result.get("cicids_if_prediction",  ""),
+            "nslkdd_anom_score": result.get("nslkdd_anomaly_score",  ""),
+            "cicids_anom_score": result.get("cicids_anomaly_score",  ""),
+        }
+
+        with self.lock:
+            with open(path, "a", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=self.COLUMNS)
+                if is_new:
+                    writer.writeheader()   # write column names on first entry of the day
+                writer.writerow(row)
+
+
+# Singleton log writer instance
+log_writer = LogWriter(LOGS_DIR)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -162,6 +314,26 @@ def predict(req: PredictRequest):
     """Single-dataset prediction (RF + IF + risk score)."""
     validate_dataset(req.dataset)
     return run_prediction(req.dataset.lower(), req.features)
+
+
+@app.get("/api/latest")
+def get_latest():
+    """
+    Returns the most recent dual prediction.
+    - If flow_extractor is running: returns real live traffic prediction
+    - If not: falls back to a random sample so dashboard always has data
+    Source field tells the dashboard which mode it is:
+      "live"   = real traffic from flow_extractor
+      "random" = fallback random sample
+    """
+    if _latest["prediction"] is not None:
+        return _latest
+
+    # No live traffic yet — fall back to random sample
+    features   = sample_random_record("nslkdd")
+    prediction = run_dual_prediction(features)
+    log_writer.write(prediction, features, "random")
+    return {"prediction": prediction, "features": features, "source": "random"}
 
 
 @app.post("/api/predict/dual")
@@ -330,6 +502,30 @@ def explain_get():
 def logs_get():
     """Last 20 prediction log lines."""
     return {"logs": list(_log_buffer)[:20]}
+
+
+@app.get("/api/logs/today")
+def logs_today():
+    """Return today's log file as a downloadable CSV."""
+    path = log_writer._log_path()
+    if not os.path.exists(path):
+        raise HTTPException(404, "No log file for today yet.")
+    from fastapi.responses import FileResponse
+    filename = os.path.basename(path)
+    return FileResponse(path, media_type="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
+@app.get("/api/logs/list")
+def logs_list():
+    """List all available log files."""
+    if not os.path.exists(LOGS_DIR):
+        return {"logs": []}
+    files = sorted(
+        [f for f in os.listdir(LOGS_DIR) if f.endswith(".csv")],
+        reverse=True   # newest first
+    )
+    return {"logs": files}
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

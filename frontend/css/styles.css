@@ -73,10 +73,21 @@ header {
 /* ── Status Cards ──────────────────────────────────────────── */
 .cards {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, 1fr) 1.6fr;
   gap: 12px;
   margin-bottom: 20px;
 }
+
+/* Attack type card — wider, colour-coded by attack category */
+.card-wide { grid-column: span 1; }
+.card-wide .card-value { font-size: 15px; font-weight: 700; }
+.attack-dos       { color: #ef4444; }
+.attack-probe     { color: #f97316; }
+.attack-brute     { color: #f59e0b; }
+.attack-web       { color: #a78bfa; }
+.attack-zeroday   { color: #fde68a; }
+.attack-normal    { color: #22c55e; }
+.attack-unknown   { color: #64748b; }
 
 .card {
   background: var(--surface);
