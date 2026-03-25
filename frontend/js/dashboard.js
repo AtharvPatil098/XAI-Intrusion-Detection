@@ -3,9 +3,9 @@
 const API      = "http://127.0.0.1:8000";
 const POLL_MS  = 2000;
 const MAX_PTS  = 30;      // max data points on timeline
-
+let isPolling = false;
 let _lastTs = null;       // timestamp of last processed prediction — skip duplicates
-
+let lastLogSignature = null;
 // ── Clock ──────────────────────────────────────────────────────────────────
 function startClock() {
   const el = document.getElementById("clock");
@@ -249,7 +249,15 @@ function buildExplanation(dual, nslExp, cicExp) {
     ? blocks.join("")
     : `<p class="exp-waiting">No SHAP data available yet.</p>`;
 
-  container.innerHTML = banner + rfSection;
+ // Clear ONLY explanation section (safe)
+ container.innerHTML = "";
+
+ // Create wrapper (prevents full DOM reflow issues)
+ const wrapper = document.createElement("div");
+ wrapper.innerHTML = banner + rfSection;
+
+ // Append safely
+ container.appendChild(wrapper);
 }
 
 function buildExpBlock(source, prediction, topFeatures) {
@@ -364,10 +372,12 @@ function addLog(dual, source = "random") {
   const div = document.createElement("div");
   div.className   = `log-entry ${cls}`;
   div.textContent = `[${ts}] [${src}] [${tag}] risk=${level} score=${score}${atype}`;
-  container.insertBefore(div, container.firstChild);
+  container.appendChild(div);
 
-  while (container.children.length > 50) container.removeChild(container.lastChild);
+  while (container.children.length > 100) 
+    container.removeChild(container.lastChild);
 
+  container.scrollTop = container.scrollHeight;
   logCount++;
   document.getElementById("logCount").textContent = logCount;
 }
@@ -393,6 +403,8 @@ function setModelBadge(id, ready) {
 
 // ── Main poll loop ─────────────────────────────────────────────────────────
 async function poll() {
+  if (isPolling) return;
+  isPolling = true; 
   try {
     // /api/latest returns live traffic if flow_extractor is running,
     // otherwise falls back to a random sample automatically
@@ -417,29 +429,47 @@ async function poll() {
 
     // Only log + re-explain when the prediction is actually new
     // (avoids duplicate log entries when no new flow has arrived yet)
+    
     const isNew = ts !== _lastTs;
-    if (isNew) {
+    if (isNew || !_lastTs) {
       _lastTs = ts;
+      const signature = JSON.stringify({
+        n1: dual.nslkdd_rf_prediction,
+        n2: dual.cicids_rf_prediction,
+        r:  dual.risk_score,
+        t:  dual.attack_type
+      });
+
+    if (signature !== lastLogSignature) {
+      lastLogSignature = signature;
       addLog(dual, source);
+    }
 
       // SHAP is expensive — only run when prediction changed
       const explainRes = await apiPost("/api/explain/dual", { features: latest.features });
       const nslExp = explainRes.nslkdd_explanation;
       const cicExp = explainRes.cicids_explanation;
       if (nslExp?.top_features) updateSHAP(nslExp.top_features);
-      buildExplanation(dual, nslExp, cicExp);
+      if (isNew) {
+        buildExplanation(dual, nslExp, cicExp);
+      }
     }
 
   } catch (err) {
     setConnection(false);
     console.warn("Poll error:", err.message);
+  }finally {
+    isPolling = false;   // ✅ RELEASE LOCK
   }
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
-startClock();
-checkHealth();
+if (!window.__POLL_STARTED__) {
+  window.__POLL_STARTED__ = true;
 
-poll();
-setInterval(poll, POLL_MS);
-setInterval(checkHealth, 30000);
+  startClock();
+  checkHealth();
+
+  setInterval(poll, POLL_MS);
+  setInterval(checkHealth, 30000);
+}

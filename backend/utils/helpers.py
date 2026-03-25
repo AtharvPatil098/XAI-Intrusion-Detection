@@ -28,23 +28,57 @@ def numpy_to_python(obj):
     return obj
 
 
+_cycle_index = 0  # global counter
+
+_df_cache = {}       # cache datasets
+_cycle_index = 0     # global counter
+
 def sample_random_record(dataset: str = "nslkdd") -> dict:
     """
-    Return a random feature dict from the processed dataset.
-    Values are explicitly cast to native Python types so they are safe
-    to pass into the feature adapter and JSON serialiser.
+    Return a feature dict from the processed dataset.
+    Cycles through attack categories in a stable order.
     """
+
     from config import DATA_PROCESSED
+    import os
+
+    global _cycle_index, _df_cache
+
     filename = "nsl_kdd_processed.csv" if dataset == "nslkdd" else "cicids_processed.csv"
-    df  = pd.read_csv(os.path.join(DATA_PROCESSED, filename))
-    row = df.sample(1).iloc[0].to_dict()
+    path = os.path.join(DATA_PROCESSED, filename)
+
+    # ✅ LOAD ONLY ONCE (CRITICAL FIX)
+    if dataset not in _df_cache:
+        df = pd.read_csv(path)
+
+        # sort categories for consistent rotation
+        if "attack_category" in df.columns:
+            df["attack_category"] = df["attack_category"].astype(str)
+
+        _df_cache[dataset] = df
+
+    df = _df_cache[dataset]
+
+    # ✅ ROTATION LOGIC
+    if "attack_category" in df.columns:
+        categories = sorted(df["attack_category"].dropna().unique().tolist())
+
+        cat = categories[_cycle_index % len(categories)]
+        _cycle_index += 1
+
+        subset = df[df["attack_category"] == cat]
+
+        if not subset.empty:
+            row = subset.sample(1).iloc[0].to_dict()
+        else:
+            row = df.sample(1).iloc[0].to_dict()
+    else:
+        row = df.sample(1).iloc[0].to_dict()
 
     # Strip label columns
     for col in ["binary_label", "attack_category", "label_encoded"]:
         row.pop(col, None)
 
-    # Convert all values to native Python types — pandas to_dict() can
-    # return np.int64 / np.float64 which cause downstream type errors
     return numpy_to_python(row)
 
 

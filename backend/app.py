@@ -180,7 +180,7 @@ def infer_attack_type(features: dict, rf_attack: bool, if_anomaly: bool) -> str:
     return "Attack — Unclassified"
 
 
-def run_dual_prediction(features: dict) -> dict:
+def run_dual_prediction(features: dict, update_state=True) -> dict:
     """Run all 4 models simultaneously and attach combined risk score + attack type."""
     pred = registry.dual_predictor().predict(features)
 
@@ -197,14 +197,20 @@ def run_dual_prediction(features: dict) -> dict:
     if_anomaly = (pred["nslkdd_if_prediction"] == 1 or pred["cicids_if_prediction"] == 1)
     result["attack_type"] = infer_attack_type(features, rf_attack, if_anomaly)
 
+    signature = (
+    pred["nslkdd_rf_prediction"],
+    pred["cicids_rf_prediction"],
+    round(result.get("risk_score", 0), 3),
+    result.get("attack_type", "")
+    )
     # Store as latest prediction
-    _latest["prediction"] = result
-    _latest["features"]   = features
-    _latest["source"]     = "live"
-    _latest["ts"]         = datetime.now().isoformat()
-
-    # Write to daily CSV log
-    log_writer.write(result, features, "live")
+    if update_state:
+        _latest["prediction"] = result
+        _latest["features"]   = features
+        _latest["source"]     = "live"
+        _latest["ts"]         = datetime.now().isoformat()
+        _latest["signature"]  = signature
+        log_writer.write(result, features, "live")
 
     return result
 
@@ -318,22 +324,40 @@ def predict(req: PredictRequest):
 
 @app.get("/api/latest")
 def get_latest():
-    """
-    Returns the most recent dual prediction.
-    - If flow_extractor is running: returns real live traffic prediction
-    - If not: falls back to a random sample so dashboard always has data
-    Source field tells the dashboard which mode it is:
-      "live"   = real traffic from flow_extractor
-      "random" = fallback random sample
-    """
-    if _latest["prediction"] is not None:
+    try:
+        if _latest["prediction"] is not None:
+            return _latest
+
+        # fallback
+        features   = sample_random_record("nslkdd")
+        prediction = run_dual_prediction(features)
+
+        # ensure source is correct
+        _latest["source"] = "random"
+
         return _latest
 
-    # No live traffic yet — fall back to random sample
-    features   = sample_random_record("nslkdd")
-    prediction = run_dual_prediction(features)
-    log_writer.write(prediction, features, "random")
-    return {"prediction": prediction, "features": features, "source": "random"}
+    except Exception as e:
+        print("ERROR in /api/latest:", e)
+
+        return {
+            "prediction": {
+                "nslkdd_rf_prediction": 0,
+                "nslkdd_if_prediction": 0,
+                "cicids_rf_prediction": 0,
+                "cicids_if_prediction": 0,
+                "risk_score": 0,
+                "risk_level": "Low",
+                "attack_type": "Normal",
+                "nslkdd_rf_contribution": 0,
+                "nslkdd_if_contribution": 0,
+                "cicids_rf_contribution": 0,
+                "cicids_if_contribution": 0,
+            },
+            "features": {},
+            "source": "demo",
+            "ts": datetime.now().isoformat()
+        }
 
 
 @app.post("/api/predict/dual")
@@ -386,7 +410,7 @@ def explain_dual(req: DualPredictRequest):
     Returns dual prediction + NSL-KDD and CICIDS feature importances
     in one response — one click, full picture.
     """
-    prediction   = run_dual_prediction(req.features)
+    prediction = run_dual_prediction(req.features, update_state=False)
     nslkdd_exp   = registry.explainer("nslkdd").explain(req.features, top_n=12)
     cicids_exp   = registry.explainer("cicids").explain(req.features,  top_n=12)
     return numpy_to_python({
