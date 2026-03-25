@@ -124,4 +124,3 @@ This structure is:
 ✔ Scalable
 ✔ Easy to debug
 ✔ Industry-style
-
