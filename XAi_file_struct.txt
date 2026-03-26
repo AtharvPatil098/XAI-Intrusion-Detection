@@ -119,8 +119,6 @@ explanation_engine.py
 🧠 FINAL UNDERSTANDING
 
 This structure is:
-
+✔ Easy to debug
 ✔ Modular
 ✔ Scalable
-✔ Easy to debug
-✔ Industry-style
