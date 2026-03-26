@@ -258,7 +258,8 @@ header {
   background: rgba(255,255,255,0.03);
   color: var(--muted);
   border-left: 2px solid transparent;
-  animation: fadeIn 0.3s ease;
+  animation: fadeIn 0.4s ease;
+  will-change: opacity;   /* prevents repaint flicker */
 }
 .log-entry.log-attack { border-left-color: var(--red);   color: #fca5a5; }
 .log-entry.log-normal { border-left-color: var(--green); color: #86efac; }
