@@ -13,7 +13,7 @@ Windows Host Machine
     │
     └── VirtualBox
             ├── Kali Linux        192.168.232.129  (Attacker)
-            └── Metasploitable    192.168.232.128  (Victim)
+            └── Metasploitable    192.168.232.130  (Victim)
 ```
 
 ---
@@ -84,7 +84,7 @@ cd backend
 python vm_lab/flow_extractor.py ^
   --interface "\Device\NPF_{BCB66A33-2C7F-49EE-A091-11D81FED149C}" ^
   --kali 192.168.232.129 ^
-  --target 192.168.232.128
+  --target 192.168.232.130
 ```
 atharv = \Device\NPF_{BCB66A33-2C7F-49EE-A091-11D81FED149C}
 
@@ -109,12 +109,12 @@ Once flow_extractor is running you should see:
 
 From Kali, ping Metasploitable to generate traffic:
 ```bash
-ping 192.168.232.128
+ping 192.168.232.130
 ```
 
 You should immediately see alert lines in the flow_extractor terminal:
 ```
-[08:42:11] 192.168.232.129:0 → 192.168.232.128:0 (ICMP) | [Low    ] Risk:  18.2
+[08:42:11] 192.168.232.129:0 → 192.168.232.130:0 (ICMP) | [Low    ] Risk:  18.2
 ```
 
 ---
@@ -123,20 +123,20 @@ You should immediately see alert lines in the flow_extractor terminal:
 
 ### Port Scan (Probe detection)
 ```bash
-nmap -sS -T4 -p 1-1024 192.168.232.128
+nmap -sS -T4 -p 1-1024 192.168.232.130
 ```
 Expected: High/Critical, SYN Flag Count elevated, NSL-KDD flags as probe
 
 ### DoS SYN Flood
 ```bash
-sudo hping3 --syn --flood -p 80 192.168.232.128 &
+sudo hping3 --syn --flood -p 80 192.168.232.130 &
 sleep 10 && kill %1
 ```
 Expected: Critical, serror_rate = 1.0, both RF models flag DoS
 
 ### Brute Force SSH
 ```bash
-hydra -l msfadmin -P /usr/share/wordlists/rockyou.txt ssh://192.168.232.128 -t 4
+hydra -l msfadmin -P /usr/share/wordlists/rockyou.txt ssh://192.168.232.130 -t 4
 ```
 Expected: High risk, service = ssh, num_failed_logins elevated
 

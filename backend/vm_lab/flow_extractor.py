@@ -492,7 +492,7 @@ if __name__ == "__main__":
                         help="Backend API URL")
     parser.add_argument("--kali",      default="192.168.232.129",
                         help="Kali Linux IP address (attacker)")
-    parser.add_argument("--target",    default="192.168.232.128",
+    parser.add_argument("--target",    default="192.168.232.130",
                         help="Metasploitable IP address (victim)")
     parser.add_argument("--verbose",   action="store_true",
                         help="Print API errors and warnings")
