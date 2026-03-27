@@ -13,11 +13,17 @@
 #   Windows:  python vm_lab/flow_extractor.py --interface "\Device\NPF_{guid}"
 #   Linux:    sudo python vm_lab/flow_extractor.py --interface vboxnet0
 
+import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
 import argparse
 import time
 import threading
+
 from collections import defaultdict
 from datetime import datetime
+from preprocessing.feature_adapter import compute_derived_features
 
 try:
     from scapy.all import sniff, IP, TCP, UDP, ICMP
@@ -302,7 +308,7 @@ class FlowAggregator:
       DoS   →  many flows        →  aggregated  →  count=high, serror_rate=1.0
     """
 
-    IDLE_SECS = 3.0   # seconds of no new flows before flushing a group
+    IDLE_SECS = 8.0   # seconds of no new flows before flushing a group
 
     def __init__(self, on_burst_complete):
         self.groups          = defaultdict(list)   # (src,dst) → [Flow, ...]
@@ -466,7 +472,19 @@ def run(interface: str, api_url: str, kali_ip: str, target_ip: str, verbose: boo
 
     def on_burst_complete(flows: list):
         features = aggregate_features(flows)
+        # 🔥 CRITICAL LINE
+        derived = compute_derived_features(flows, features)
+        features.update(derived)
         post_prediction(features, api_url, flows, verbose)
+        print("DERIVED:", {
+            "entropy": features.get("port_entropy"),
+            "single_port": features.get("single_port_frac"),
+            "syn_ack": features.get("syn_ack_ratio"),
+            "unique_ports": features.get("unique_dst_ports"),
+            "bytes_per_flow": features.get("bytes_per_flow"),
+            "response_ratio": features.get("response_ratio")
+        })
+        print(features.get("port_entropy"))
 
     aggregator = FlowAggregator(on_burst_complete)
     tracker    = FlowTracker(aggregator, vm_ips)
@@ -499,3 +517,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     run(args.interface, args.api, args.kali, args.target, args.verbose)
+

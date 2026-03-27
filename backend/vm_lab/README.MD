@@ -106,6 +106,8 @@ Once flow_extractor is running you should see:
 [FlowExtractor] Flow idle timeout: 5s
 [FlowExtractor] Press Ctrl+C to stop
 ```
+For Metasploitable 
+sudo /etc/init.d/ssh start
 
 From Kali, ping Metasploitable to generate traffic:
 ```bash
