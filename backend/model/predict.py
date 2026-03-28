@@ -10,6 +10,23 @@ import joblib
 from config import MODELS_NSLKDD, MODELS_CICIDS
 from preprocessing.feature_adapter import FeatureAdapter, DualFeatureAdapter
 
+# ── Register the wrapper class before any joblib.load() call ─────────────────
+# This import is what makes joblib.load("rf_model.pkl") work correctly.
+#
+# When pickle deserialises rf_model.pkl it looks up the string
+# "model.rf_wrapper.MultiClassRFWrapper" in sys.modules.  If the module has
+# never been imported in this process, Python cannot find the class and raises:
+#
+#   AttributeError: module '__main__' has no attribute 'MultiClassRFWrapper'
+#
+# Importing here — before _load_models() is ever called — guarantees that
+# model.rf_wrapper is in sys.modules and the class is resolvable, regardless
+# of whether this process is a training script, FastAPI worker, or test runner.
+#
+# The name MultiClassRFWrapper is not used explicitly anywhere below; the
+# import's side-effect (registering the module) is all that is needed.
+from model.rf_wrapper import MultiClassRFWrapper  # noqa: F401
+
 
 # ── Single dataset predictor ──────────────────────────────────────────────────
 

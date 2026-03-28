@@ -1,0 +1,6 @@
+timestamp,source,src_ip,dst_ip,protocol,risk_level,risk_score,attack_type,nslkdd_rf,nslkdd_if,cicids_rf,cicids_if,nslkdd_anom_score,cicids_anom_score
+2026-03-28 14:11:45,random,,,2.0,Medium,36.1,Unknown — Possible Zero-Day,0,1,0,0,-0.49682951889455074,-0.3257833147076861
+2026-03-28 14:11:46,live,,,2,Medium,36.1,Unknown — Possible Zero-Day,0,1,0,0,-0.49682951889455074,-0.3257833147076861
+2026-03-28 14:13:21,live,,,tcp,High,63.9,DoS — SYN Flood,1,1,0,1,-0.6726116311484402,-0.55482966236092
+2026-03-28 14:14:33,live,,,tcp,Medium,44.8,DoS — SYN Flood,0,1,0,1,-0.49911584845855256,-0.6778989361619358
+2026-03-28 14:16:04,live,,,tcp,Medium,45.3,Unknown — Possible Zero-Day,0,1,0,1,-0.5339582815900747,-0.5321458623433196
