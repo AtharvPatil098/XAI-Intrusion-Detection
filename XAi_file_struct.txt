@@ -45,9 +45,9 @@ XAI-Intrusion-Detection/
 │
 │   ├── vm_lab/
 │   │   ├── logs/
-│   │   │   ├── normal_traffic.log
-│   │   │   ├── attack_traffic.log
-│   │   │   └── mixed_traffic.log
+│   │   │   ├── ids_log_2026-03-24.csv
+│   │   │   ├── ids_log_2026-03-25.csv
+│   │   │   └── ids_log_2026-03-26.csv
 │   │   │
 │   │   ├── attack_scripts/
 │   │   │   ├── port_scan.sh
