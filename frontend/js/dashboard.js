@@ -13,6 +13,8 @@ let _lastLogKey      = null;   // dedup key for the activity log
 let _polling         = false;  // guard: only one poll() in-flight at a time
 let _connected       = null;   // tri-state: null | true | false (avoid flicker)
 let _lastSource      = null;   // track source changes without DOM thrash
+let _failCount       = 0;      // consecutive poll failures before showing OFFLINE
+const OFFLINE_AFTER  = 3;      // only go OFFLINE after this many consecutive failures
 let _lastSignature = null;
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -48,21 +50,41 @@ function startClock() {
 }
 
 // ── Connection indicator ───────────────────────────────────────────────────
-// FIX: only write to DOM when state actually changes (was updating every poll)
-function setConnection(online) {
-  if (_connected === online) return;   // ← no change, skip DOM write
-  _connected = online;
-  document.getElementById("connDot").className    = "dot " + (online ? "online" : "offline");
-  document.getElementById("connLabel").textContent = online ? "LIVE · DEMO" : "OFFLINE";
+// setConnectionOnline(source) — called on every successful poll.
+//   Resets the failure counter, sets the dot green, and writes the label
+//   once from the source string so setConnection and setSourceLabel
+//   never fight over the same DOM element.
+//
+// setConnectionOffline() — only called after OFFLINE_AFTER consecutive
+//   failures so a single slow request doesn't flash OFFLINE.
+
+function setConnectionOnline(source) {
+  _failCount = 0;
+  const label = source === "live" ? "LIVE TRAFFIC" : "LIVE · DEMO";
+  const dot   = document.getElementById("connDot");
+  const lbl   = document.getElementById("connLabel");
+
+  // Only write DOM when something actually changed
+  if (_connected !== true) {
+    _connected = true;
+    if (dot) dot.className = "dot online";
+  }
+  if (_lastSource !== label) {
+    _lastSource = label;
+    if (lbl) lbl.textContent = label;
+  }
 }
 
-// Called separately when we know the source
-function setSourceLabel(source) {
-  const label = source === "live" ? "LIVE TRAFFIC" : "LIVE · DEMO";
-  if (_lastSource === label) return;   // ← no change, skip DOM write
-  _lastSource = label;
-  const el = document.getElementById("connLabel");
-  if (el) el.textContent = label;
+function setConnectionOffline() {
+  _failCount++;
+  if (_failCount < OFFLINE_AFTER) return;   // absorb transient blips
+  if (_connected === false) return;          // already offline, no DOM write needed
+  _connected  = false;
+  _lastSource = null;                        // reset so next success re-writes label
+  const dot = document.getElementById("connDot");
+  const lbl = document.getElementById("connLabel");
+  if (dot) dot.className = "dot offline";
+  if (lbl) lbl.textContent = "OFFLINE";
 }
 
 // ── API helpers ────────────────────────────────────────────────────────────
@@ -509,9 +531,8 @@ async function poll() {
     const source = latest.source;
     const ts     = latest.ts ?? null;
 
-    // Connection state — only writes DOM when it actually changes
-    setConnection(true);
-    setSourceLabel(source);
+    // Connection state — single call handles dot + label atomically
+    setConnectionOnline(source);
 
     // ── Always update cards/gauge/contribs (guarded internally) ───────────
     updateCards(dual);
@@ -546,7 +567,7 @@ if (isNewEntry) {
     //   the _polling guard. This prevents poll-skip cascades when SHAP is slow.
     const now = Date.now();
 
-    if (!_lastExplainTs || (isNewTs && now - _lastExplainTs >= EXPLAIN_MS)) {
+    if (!_lastExplainTs || (isNewEntry && now - _lastExplainTs >= EXPLAIN_MS)) {
       _lastExplainTs = now;
 
       const featuresSnapshot = latest.features;
@@ -573,7 +594,7 @@ if (isNewEntry) {
     }
 
   } catch (err) {
-    setConnection(false);
+    setConnectionOffline();
     console.warn("Poll error:", err.message);
   } finally {
     _polling = false;   // always release, even on error

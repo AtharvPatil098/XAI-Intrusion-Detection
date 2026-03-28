@@ -38,11 +38,22 @@ class ExplanationEngine:
             print(f"[ExplanationEngine] RF model not found for '{self.dataset}'. Train first.")
             return
 
-        rf_model      = joblib.load(rf_path)
+        rf_loaded     = joblib.load(rf_path)
         feature_names = (joblib.load(feat_path) if os.path.exists(feat_path)
                          else self.adapter.get_feature_names())
 
-        self.explainer = SHAPExplainer(rf_model, feature_names)
+        # shap.TreeExplainer only accepts a raw sklearn RandomForestClassifier.
+        # rf_model.pkl contains a MultiClassRFWrapper — unwrap it so SHAP
+        # receives the underlying .rf estimator directly.
+        from model.rf_wrapper import MultiClassRFWrapper
+        if isinstance(rf_loaded, MultiClassRFWrapper):
+            raw_rf     = rf_loaded.rf           # raw sklearn RandomForestClassifier
+            normal_idx = rf_loaded._normal_idx  # cached index of "Normal" class
+        else:
+            raw_rf     = rf_loaded
+            normal_idx = 0
+
+        self.explainer = SHAPExplainer(raw_rf, feature_names, normal_idx)
         self.scaler    = joblib.load(sc_path) if os.path.exists(sc_path) else None
 
     def explain(self, input_dict: dict, top_n: int = 10) -> dict:
