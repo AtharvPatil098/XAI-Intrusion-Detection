@@ -64,6 +64,7 @@ class Predictor:
         result = {
             "dataset":        self.dataset,
             "rf_prediction":  None,     # 0 = normal,  1 = attack
+            "rf_class":       None,     # multiclass label e.g. "DoS", "Port Scan"
             "rf_probability": None,     # [p_normal, p_attack]
             "if_prediction":  None,     # 0 = normal,  1 = anomaly
             "anomaly_score":  None,     # more negative = more anomalous
@@ -73,8 +74,11 @@ class Predictor:
         if self.rf_model:
             result["rf_prediction"]  = int(self.rf_model.predict(X_scaled)[0])
             result["rf_probability"] = self.rf_model.predict_proba(X_scaled)[0].tolist()
+            # Multiclass label — used by app.py to derive attack_type via ML
+            if hasattr(self.rf_model, "predict_label"):
+                result["rf_class"] = self.rf_model.predict_label(X_scaled)
 
-        # ── Step 3: Isolation Forest — zero-day anomaly detection ─────────
+        # ── Step 3: Isolation Forest — secondary anomaly signal ───────────
         if self.if_model:
             if_raw = int(self.if_model.predict(X_scaled)[0])   # IF: 1=normal, -1=anomaly
             result["if_prediction"] = 0 if if_raw == 1 else 1
@@ -112,17 +116,19 @@ class DualPredictor:
 
         # ── Step 2: scale each array with its own scaler ─────────────────
         X_nslkdd_scaled = self.nslkdd.scaler.transform(X_nslkdd) if self.nslkdd.scaler else X_nslkdd
-        X_cicids_scaled  = self.cicids.scaler.transform(X_cicids)  if self.cicids.scaler  else X_cicids
+        X_cicids_scaled = self.cicids.scaler.transform(X_cicids)  if self.cicids.scaler else X_cicids
 
         # ── Step 3: run all 4 models ──────────────────────────────────────
         result = {
             # NSL-KDD signals
             "nslkdd_rf_prediction":  None,
+            "nslkdd_rf_class":       None,   # multiclass label e.g. "DoS", "Port Scan"
             "nslkdd_rf_probability": None,
             "nslkdd_if_prediction":  None,
             "nslkdd_anomaly_score":  None,
             # CICIDS signals
             "cicids_rf_prediction":  None,
+            "cicids_rf_class":       None,   # multiclass label e.g. "Brute Force"
             "cicids_rf_probability": None,
             "cicids_if_prediction":  None,
             "cicids_anomaly_score":  None,
@@ -131,6 +137,8 @@ class DualPredictor:
         if self.nslkdd.rf_model:
             result["nslkdd_rf_prediction"]  = int(self.nslkdd.rf_model.predict(X_nslkdd_scaled)[0])
             result["nslkdd_rf_probability"] = self.nslkdd.rf_model.predict_proba(X_nslkdd_scaled)[0].tolist()
+            if hasattr(self.nslkdd.rf_model, "predict_label"):
+                result["nslkdd_rf_class"] = self.nslkdd.rf_model.predict_label(X_nslkdd_scaled)
 
         if self.nslkdd.if_model:
             if_raw = int(self.nslkdd.if_model.predict(X_nslkdd_scaled)[0])
@@ -140,6 +148,8 @@ class DualPredictor:
         if self.cicids.rf_model:
             result["cicids_rf_prediction"]  = int(self.cicids.rf_model.predict(X_cicids_scaled)[0])
             result["cicids_rf_probability"] = self.cicids.rf_model.predict_proba(X_cicids_scaled)[0].tolist()
+            if hasattr(self.cicids.rf_model, "predict_label"):
+                result["cicids_rf_class"] = self.cicids.rf_model.predict_label(X_cicids_scaled)
 
         if self.cicids.if_model:
             if_raw = int(self.cicids.if_model.predict(X_cicids_scaled)[0])

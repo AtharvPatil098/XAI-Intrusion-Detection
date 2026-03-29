@@ -94,6 +94,16 @@ class Flow:
 
     @property
     def is_syn_error(self):
+        """
+        True for connections representing unanswered or incomplete SYNs.
+
+        S0 = SYN sent, NO reply (classic Neptune / pure SYN flood on busy host)
+        S1 = SYN sent, SYN-ACK received, handshake never completed.
+             In a DoS burst the attacker never sends the final ACK — the server
+             half-open queue fills up. This IS a syn error from the server side.
+             hping3 --flood typically produces S1 when the target responds.
+        Both must count towards serror_rate so the RF sees the right signal.
+        """
         return self.flag in ("S0", "S1", "S2", "S3")
 
     @property
@@ -160,6 +170,62 @@ def aggregate_features(flows: list) -> dict:
     # Reference flow for IP/port info
     ref = flows[0]
 
+    # ── DoS volumetric correction ─────────────────────────────────────────────
+    # hping3 --flood creates half-open connections (S1 flag) where the target
+    # responds with SYN-ACK but the handshake is never completed.  In this case
+    # serr_rate is correctly ≥ 0, but the VOLUME of total SYN packets across the
+    # burst is the clearest flood signal.  We compute a "syn_flood_rate" as the
+    # fraction of flows whose SYN count dominates over ACK+FIN (incomplete
+    # handshake), giving the RF an additional strong signal even when serr_rate
+    # is moderate.
+    total_syn_flows = sum(
+        1 for f in flows
+        if f.syn_count > 0 and f.fin_count == 0 and f.ack_count <= f.syn_count
+    )
+    syn_flood_rate = total_syn_flows / n  # high for both S0 and S1 DoS bursts
+
+    # ── logged_in correction ──────────────────────────────────────────────────
+    # Original: logged_in=1 whenever any flow has ack_count > 3.
+    # Problem:  in a DoS burst the attacker receives SYN-ACK replies and the
+    #           kernel auto-ACKs them → ack_count spikes even though nobody
+    #           actually logged in.  logged_in should only be 1 when there is
+    #           genuine bidirectional data exchange (not just handshake packets).
+    # Fix:      require both significant forward AND backward payload bytes,
+    #           AND the flow must have completed (FIN seen or long duration).
+    def _is_logged_in(f):
+        fwd_payload = sum(p[1] for p in f.fwd_packets)
+        bwd_payload = sum(p[1] for p in f.bwd_packets)
+        return (fwd_payload > 100 and bwd_payload > 100
+                and (f.fin_count > 0 or f.duration > 2.0))
+
+    logged_in_val = 1 if any(_is_logged_in(f) for f in flows) else 0
+
+    # ── num_failed_logins inference ───────────────────────────────────────────
+    # Packet capture cannot read application-layer auth failures directly.
+    # We approximate: many short bidirectional flows to an auth port (22/21/23
+    # etc.) where NEITHER side sends large payloads = repeated login attempts
+    # that fail quickly.  The RF was trained with num_failed_logins as the
+    # primary Brute Force discriminator, so even a heuristic value helps.
+    AUTH_PORTS = {22, 21, 23, 3306, 3389, 5900, 25, 110, 143, 389, 636}
+    dst_port_set = set(f.dst_port for f in flows)
+    is_auth_burst = bool(dst_port_set & AUTH_PORTS) and unique_ports <= 3
+
+    if is_auth_burst and n >= 3:
+        # Count flows that look like failed attempts: SF flag (full handshake)
+        # but very small total payload (just the auth challenge/response,
+        # nothing more — a successful login sends much more data).
+        small_payload_flows = sum(
+            1 for f in flows
+            if f.flag == "SF"
+            and sum(p[1] for p in f.fwd_packets) < 500
+            and sum(p[1] for p in f.bwd_packets) < 500
+        )
+        # Scale: if ≥50% of flows look like failed auth attempts, infer a count
+        failed_frac = small_payload_flows / n
+        num_failed_logins_val = int(small_payload_flows * failed_frac)
+    else:
+        num_failed_logins_val = 0
+
     # ── CICIDS IAT features ───────────────────────────────────────────────────
     all_iats_val = iats(sorted(all_pkt, key=lambda p: p[0]))
     fwd_iats_val = iats(all_fwd_pkt)
@@ -182,8 +248,13 @@ def aggregate_features(flows: list) -> dict:
         "wrong_fragment":              0,
         "urgent":                      sum(f.urg_count for f in flows),
         "hot":                         0,
-        "num_failed_logins":           0,
-        "logged_in":                   1 if any(f.ack_count > 3 for f in flows) else 0,
+        # num_failed_logins: inferred from small-payload auth-port flows (see above)
+        "num_failed_logins":           num_failed_logins_val,
+        # logged_in: requires real payload exchange in both directions (not just handshake)
+        "logged_in":                   logged_in_val,
+        # syn_flood_rate: fraction of flows with incomplete handshake (DoS signal)
+        # Not a standard NSL-KDD feature — passed through for attack_type resolution
+        "syn_flood_rate":              round(syn_flood_rate, 3),
         "num_compromised":             0,
         "root_shell":                  0,
         "su_attempted":                0,
@@ -517,4 +588,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     run(args.interface, args.api, args.kali, args.target, args.verbose)
-

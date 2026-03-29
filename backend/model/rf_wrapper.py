@@ -108,6 +108,23 @@ class MultiClassRFWrapper:
         encoded = self.rf.predict(X)
         return self.le.inverse_transform(encoded)
 
+    def predict_label(self, X) -> str:
+        """
+        Convenience method: returns the single string class label for the
+        first (and typically only) sample in X.
+
+        Used by Predictor.predict() and DualPredictor.predict() to expose
+        the multiclass RF decision as 'rf_class' in the API response, so
+        app.py can derive attack_type from ML output instead of rule-based logic.
+
+        Returns "Unknown" if inverse_transform fails for any reason.
+        """
+        try:
+            encoded = self.rf.predict(X)
+            return str(self.le.inverse_transform(encoded)[0])
+        except Exception:
+            return "Unknown"
+
     def predict_proba_multiclass(self, X) -> np.ndarray:
         """Full (n_samples, n_classes) probability matrix, one column per class."""
         return self.rf.predict_proba(X)

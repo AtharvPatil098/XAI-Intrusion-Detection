@@ -25,6 +25,7 @@ from pydantic import BaseModel
 
 from model.predict import Predictor, DualPredictor
 from model.risk_score import compute_risk_score, compute_dual_risk_score
+from model.attack_type import map_rf_class, resolve_attack_type as _resolve_attack_type
 from explainability.explanation_engine import ExplanationEngine
 from utils.helpers import (numpy_to_python, sample_random_record,
                            summarise_results, summarise_dual_results)
@@ -118,38 +119,6 @@ def run_prediction(dataset: str, features: dict) -> dict:
     return numpy_to_python({**pred, **risk})
 
 
-def infer_attack_type(features: dict, rf_attack: bool, if_anomaly: bool) -> str:
-    if not rf_attack and not if_anomaly:
-        return "Normal"
-
-    serr   = float(features.get("serror_rate", 0))
-    rerr   = float(features.get("rerror_rate", 0))
-    count  = float(features.get("count", 0))
-    diff   = float(features.get("diff_srv_rate", 0))
-    flag   = str(features.get("flag", ""))
-    proto  = str(features.get("protocol_type", ""))
-    port   = int(features.get("Destination Port", features.get("dst_port", 0)))
-    syn    = float(features.get("SYN Flag Count", features.get("syn_count", 0)))
-    dst_b  = float(features.get("dst_bytes", features.get("Total Length of Bwd Packets", 0)))
-    src_b  = float(features.get("src_bytes", features.get("Total Length of Fwd Packets", 0)))
-    pkts_s = float(features.get("Flow Packets/s", 0))
-
-    if serr > 0.5 and count > 50:                return "DoS — SYN Flood (Neptune)"
-    if syn > 200:                                 return "DoS — SYN Flood"
-    if pkts_s > 10000:                            return "DoS — Flood Attack"
-    if proto == "icmp" and count > 50:            return "DoS — ICMP Flood (Smurf)"
-    if count > 200 and dst_b == 0:                return "DoS — UDP/Null Flood"
-    if rerr > 0.5 and diff > 0.5 and count > 20:  return "Probe — Port Scan"
-    if rerr > 0.3 and diff > 0.7:                 return "Probe — Port Sweep"
-    if diff > 0.8 and count > 10:                 return "Probe — Network Scan"
-    if flag in ("REJ", "S0") and diff > 0.3:      return "Probe — Stealth Scan"
-    if port == 22 and src_b > 0 and dst_b == 0:   return "Brute Force — SSH"
-    if port == 21 and src_b > 0 and dst_b == 0:   return "Brute Force — FTP"
-    if port in (23, 3389) and count > 5:          return "Brute Force — Remote Login"
-    if port in (80, 443, 8080) and src_b > 5000:  return "Web Attack"
-    if if_anomaly and not rf_attack:              return "Unknown — Possible Zero-Day"
-    return "Attack — Unclassified"
-
 
 # ── Stable timestamp: only update _latest["ts"] when content changes ──────────
 def _prediction_fingerprint(result: dict) -> str:
@@ -169,6 +138,9 @@ def run_dual_prediction(features: dict, store_as_latest: bool = True) -> dict:
     """
     Run all 4 models simultaneously and attach combined risk score + attack type.
 
+    Attack type is now derived from the multiclass RF output via _resolve_attack_type().
+    The rule-based infer_attack_type() / infer_attack_type_v2() are no longer called.
+
     store_as_latest=True  — updates _latest only when content changes
     store_as_latest=False — pure computation, no side effects (random cache)
     """
@@ -182,11 +154,12 @@ def run_dual_prediction(features: dict, store_as_latest: bool = True) -> dict:
     risk   = compute_dual_risk_score(nslkdd_rf_prob, nslkdd_anom, cicids_rf_prob, cicids_anom)
     result = numpy_to_python({**pred, **risk})
 
-    rf_attack  = (pred["nslkdd_rf_prediction"] == 1 or pred["cicids_rf_prediction"] == 1)
-    if_anomaly = (pred["nslkdd_if_prediction"] == 1 or pred["cicids_if_prediction"] == 1)
-    result["attack_type"] = infer_attack_type(features, rf_attack, if_anomaly)
+    # ── ML-driven attack type (replaces rule-based infer_attack_type) ────────
+    if_anomaly = (pred.get("nslkdd_if_prediction") == 1 or
+                  pred.get("cicids_if_prediction")  == 1)
+    result["attack_type"] = _resolve_attack_type(result, if_anomaly, features=features)
 
-    fingerprint = _prediction_fingerprint(result)  # ✅ ADD THIS LINE
+    fingerprint = _prediction_fingerprint(result)
 
     if store_as_latest:
         if fingerprint != _last_live_fingerprint[0]:

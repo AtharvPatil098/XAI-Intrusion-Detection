@@ -11,7 +11,7 @@ import time
 
 from model.predict import Predictor, DualPredictor
 from model.risk_score import compute_risk_score, compute_dual_risk_score
-from preprocessing.feature_adapter import infer_attack_type_v2 
+from model.attack_type import resolve_attack_type
 
 def is_header_line(line: str) -> bool:
     """Return True if the line looks like a CSV header (first token is non-numeric)."""
@@ -122,46 +122,28 @@ class DualRealtimeDetector:
         pred = self.predictor.predict(row_dict)
 
         # Extract signals with safe fallbacks
-        nslkdd_rf_prob  = pred["nslkdd_rf_probability"][1] if pred["nslkdd_rf_probability"] else 0.5
-        nslkdd_anom     = pred["nslkdd_anomaly_score"]     if pred["nslkdd_anomaly_score"] is not None else -0.3
-        cicids_rf_prob  = pred["cicids_rf_probability"][1]  if pred["cicids_rf_probability"]  else 0.5
-        cicids_anom     = pred["cicids_anomaly_score"]      if pred["cicids_anomaly_score"]  is not None else -0.3
+        nslkdd_rf_prob = pred["nslkdd_rf_probability"][1] if pred["nslkdd_rf_probability"] else 0.5
+        nslkdd_anom    = pred["nslkdd_anomaly_score"]     if pred["nslkdd_anomaly_score"] is not None else -0.3
+        cicids_rf_prob = pred["cicids_rf_probability"][1]  if pred["cicids_rf_probability"]  else 0.5
+        cicids_anom    = pred["cicids_anomaly_score"]      if pred["cicids_anomaly_score"]  is not None else -0.3
 
         risk = compute_dual_risk_score(
             nslkdd_rf_prob, nslkdd_anom,
             cicids_rf_prob, cicids_anom
         )
 
-        # 🔥 ADD THIS BLOCK
-        features = row_dict  # original features
-
-        count = float(features.get("count", 0))
-        srv_count = float(features.get("srv_count", 0))
-        src_bytes = float(features.get("src_bytes", 0))
-        dst_bytes = float(features.get("dst_bytes", 0))
-
-        rf_attack = (
-            pred["nslkdd_rf_prediction"] == 1 or
-            pred["cicids_rf_prediction"] == 1
-        )
-
+        # ── ML-driven attack type (replaces rule-based infer_attack_type_v2) ──
+        # IF is treated as secondary: only surfaces when both RFs say Normal.
         if_anomaly = (
-            pred["nslkdd_if_prediction"] == -1 or
-            pred["cicids_if_prediction"] == -1
+            pred.get("nslkdd_if_prediction") == 1 or
+            pred.get("cicids_if_prediction")  == 1
         )
+        result = {**pred, **risk}
+        # Pass the original row_dict (contains derived features from flow_extractor)
+        # so the IF-only branch can classify DoS/Brute Force by derived features
+        attack_type = resolve_attack_type(result, if_anomaly, features=row_dict)
 
-        attack_type = infer_attack_type_v2(
-            row_dict,
-            rf_attack,
-            if_anomaly
-        )
-
-        # ✅ FINAL RETURN
-        return {
-            **pred,
-            **risk,
-            "attack_type": attack_type
-        }
+        return {**result, "attack_type": attack_type}
 
     def process_csv_file(self, filepath: str, max_rows: int = 100) -> list:
         """Read a CSV (with header) and process up to max_rows records."""
