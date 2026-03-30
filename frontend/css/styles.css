@@ -440,3 +440,10 @@ header {
 
 /* ── Utility ───────────────────────────────────────────────── */
 .mono { font-family: var(--mono); }
+/* ── IF-only detection: muted RF block styling ─────────────────────────────
+   When RF=Normal but IF flagged anomaly, the RF SHAP blocks are shown
+   in a dimmed style so they don't compete visually with the IF evidence. */
+.exp-block-muted {
+  opacity: 0.6;
+  border-left-color: #334155 !important;
+}

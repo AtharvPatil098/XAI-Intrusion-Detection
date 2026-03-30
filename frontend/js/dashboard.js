@@ -13,8 +13,6 @@ let _lastLogKey      = null;   // dedup key for the activity log
 let _polling         = false;  // guard: only one poll() in-flight at a time
 let _connected       = null;   // tri-state: null | true | false (avoid flicker)
 let _lastSource      = null;   // track source changes without DOM thrash
-let _failCount       = 0;      // consecutive poll failures before showing OFFLINE
-const OFFLINE_AFTER  = 3;      // only go OFFLINE after this many consecutive failures
 let _lastSignature = null;
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -50,41 +48,21 @@ function startClock() {
 }
 
 // ── Connection indicator ───────────────────────────────────────────────────
-// setConnectionOnline(source) — called on every successful poll.
-//   Resets the failure counter, sets the dot green, and writes the label
-//   once from the source string so setConnection and setSourceLabel
-//   never fight over the same DOM element.
-//
-// setConnectionOffline() — only called after OFFLINE_AFTER consecutive
-//   failures so a single slow request doesn't flash OFFLINE.
-
-function setConnectionOnline(source) {
-  _failCount = 0;
-  const label = source === "live" ? "LIVE TRAFFIC" : "LIVE · DEMO";
-  const dot   = document.getElementById("connDot");
-  const lbl   = document.getElementById("connLabel");
-
-  // Only write DOM when something actually changed
-  if (_connected !== true) {
-    _connected = true;
-    if (dot) dot.className = "dot online";
-  }
-  if (_lastSource !== label) {
-    _lastSource = label;
-    if (lbl) lbl.textContent = label;
-  }
+// FIX: only write to DOM when state actually changes (was updating every poll)
+function setConnection(online) {
+  if (_connected === online) return;   // ← no change, skip DOM write
+  _connected = online;
+  document.getElementById("connDot").className    = "dot " + (online ? "online" : "offline");
+  document.getElementById("connLabel").textContent = online ? "LIVE · DEMO" : "OFFLINE";
 }
 
-function setConnectionOffline() {
-  _failCount++;
-  if (_failCount < OFFLINE_AFTER) return;   // absorb transient blips
-  if (_connected === false) return;          // already offline, no DOM write needed
-  _connected  = false;
-  _lastSource = null;                        // reset so next success re-writes label
-  const dot = document.getElementById("connDot");
-  const lbl = document.getElementById("connLabel");
-  if (dot) dot.className = "dot offline";
-  if (lbl) lbl.textContent = "OFFLINE";
+// Called separately when we know the source
+function setSourceLabel(source) {
+  const label = source === "live" ? "LIVE TRAFFIC" : "LIVE · DEMO";
+  if (_lastSource === label) return;   // ← no change, skip DOM write
+  _lastSource = label;
+  const el = document.getElementById("connLabel");
+  if (el) el.textContent = label;
 }
 
 // ── API helpers ────────────────────────────────────────────────────────────
@@ -275,26 +253,171 @@ function updateSHAP(features) {
 }
 
 // ── AI Explanation ─────────────────────────────────────────────────────────
-function buildExplanation(dual, nslExp, cicExp) {
+// ── AI Explanation helpers ─────────────────────────────────────────────────
+
+// Derived feature display names and human-readable descriptions.
+// Used to explain IF-only detections where SHAP values describe a Normal
+// RF prediction and are therefore misleading.
+const IF_FEATURE_META = {
+  port_entropy:     { label: "Port Entropy",        desc: "Spread of destination ports (high = scan)" },
+  unique_dst_ports: { label: "Unique Dst Ports",    desc: "Number of distinct ports targeted" },
+  single_port_frac: { label: "Single-Port Fraction",desc: "Fraction of flows to one port (high = flood/brute)" },
+  syn_flood_rate:   { label: "SYN Flood Rate",      desc: "Fraction of flows with incomplete handshake" },
+  syn_ack_ratio:    { label: "SYN/ACK Ratio",       desc: "Unanswered SYNs vs ACKs (high = flood)" },
+  bytes_per_flow:   { label: "Bytes per Flow",      desc: "Average payload size per connection" },
+  response_ratio:   { label: "Response Ratio",      desc: "Fraction of flows with server reply" },
+  serror_rate:      { label: "SYN Error Rate",      desc: "Fraction of connections with SYN errors" },
+  rerror_rate:      { label: "REJ Error Rate",      desc: "Fraction of connections rejected (port closed)" },
+  diff_srv_rate:    { label: "Diff Service Rate",   desc: "Fraction of flows to different services" },
+  count:            { label: "Flow Count",          desc: "Total connections in this burst" },
+  num_failed_logins:{ label: "Failed Logins",       desc: "Estimated failed authentication attempts" },
+};
+
+// Extract the most informative derived features from the raw features dict,
+// normalised to 0-100 for bar display. Returns array of {feature, label,
+// desc, value, pct, tier} objects, sorted by significance.
+function extractIFFeatures(features) {
+  if (!features) return [];
+
+  const entries = [];
+
+  // Helper to add a feature if it exists and is non-zero
+  function add(key, rawValue, maxValue, higherIsBad) {
+    const meta  = IF_FEATURE_META[key];
+    if (!meta) return;
+    const v     = parseFloat(rawValue ?? 0);
+    if (isNaN(v)) return;
+    const pct   = Math.min(Math.abs(v) / maxValue * 100, 100).toFixed(1);
+    const tier  = pct > 66 ? "high" : pct > 33 ? "medium" : "low";
+    entries.push({ feature: key, label: meta.label, desc: meta.desc,
+                   value: v, pct, tier, higherIsBad });
+  }
+
+  add("port_entropy",      features.port_entropy,      11,   true);
+  add("unique_dst_ports",  features.unique_dst_ports,  500,  true);
+  add("single_port_frac",  features.single_port_frac,  1,    true);
+  add("syn_flood_rate",    features.syn_flood_rate,    1,    true);
+  add("syn_ack_ratio",     features.syn_ack_ratio,     20,   true);
+  add("bytes_per_flow",    features.bytes_per_flow,    10000,false);
+  add("response_ratio",    features.response_ratio,    1,    false);
+  add("serror_rate",       features.serror_rate,       1,    true);
+  add("rerror_rate",       features.rerror_rate,       1,    true);
+  add("diff_srv_rate",     features.diff_srv_rate,     1,    true);
+  add("count",             features.count,             511,  true);
+  add("num_failed_logins", features.num_failed_logins, 50,   true);
+
+  // Sort: high-tier first, then medium, then low — only show non-zero
+  const order = { high: 0, medium: 1, low: 2 };
+  return entries
+    .filter(e => e.value !== 0)
+    .sort((a, b) => order[a.tier] - order[b.tier])
+    .slice(0, 6);
+}
+
+// Build a plain-English sentence describing why the IF flagged this burst.
+function buildIFSentence(features, attackType) {
+  const t = (attackType || "").toLowerCase();
+  const f = k => parseFloat(features?.[k] ?? 0);
+
+  if (t.includes("scan") || t.includes("probe")) {
+    const ports = f("unique_dst_ports");
+    const ent   = f("port_entropy").toFixed(2);
+    return `${ports.toFixed(0)} unique destination ports contacted with entropy ${ent} ` +
+           `(max possible ≈ 10.96). Near-maximum entropy means every port was different — ` +
+           `the statistical signature of an automated port scan.`;
+  }
+  if (t.includes("dos")) {
+    const sfr  = (f("syn_flood_rate") * 100).toFixed(0);
+    const cnt  = f("count").toFixed(0);
+    const bpf  = f("bytes_per_flow").toFixed(0);
+    return `${sfr}% of ${cnt} flows had incomplete TCP handshakes (SYN sent, no FIN). ` +
+           `Average ${bpf} bytes/flow with a single target port — ` +
+           `consistent with a SYN/TCP flood attack.`;
+  }
+  if (t.includes("brute")) {
+    const cnt  = f("count").toFixed(0);
+    const bpf  = f("bytes_per_flow").toFixed(0);
+    const rr   = (f("response_ratio") * 100).toFixed(0);
+    const fl   = f("num_failed_logins").toFixed(0);
+    return `${cnt} short connections to an authentication port, averaging only ${bpf} bytes ` +
+           `each. Server responded to ${rr}% of attempts (challenge/response pattern). ` +
+           (fl > 0 ? `~${fl} estimated failed login attempts. ` : "") +
+           `Consistent with an automated credential brute-force attack.`;
+  }
+  return `Isolation Forest detected a statistically unusual traffic pattern ` +
+         `not matching the baseline normal traffic distribution.`;
+}
+
+// Build the IF explanation block shown instead of (or alongside) SHAP
+// when the RF says Normal but IF flagged an anomaly.
+function buildIFBlock(dual, features) {
+  const attackType = dual.attack_type || "";
+  const score      = dual.nslkdd_anomaly_score ?? dual.cicids_anomaly_score ?? null;
+  const scoreStr   = score !== null ? score.toFixed(4) : "n/a";
+
+  const ifFeatures = extractIFFeatures(features);
+  const sentence   = buildIFSentence(features, attackType);
+
+  const rows = ifFeatures.map(f => `
+    <div class="exp-feat-row">
+      <span class="exp-feat-name" title="${f.desc}">${f.label}</span>
+      <div class="exp-feat-bar-wrap">
+        <div class="exp-feat-bar ${f.tier}" style="width:${f.pct}%"></div>
+      </div>
+      <span class="exp-feat-val">${
+        Number.isInteger(f.value) ? f.value : f.value.toFixed(3)
+      }</span>
+    </div>`).join("");
+
+  const noData = ifFeatures.length === 0
+    ? `<p class="exp-waiting" style="margin-top:8px">
+         No derived features available — run with live flow capture for full IF explanation.
+       </p>` : "";
+
+  return `
+    <div class="exp-block attack" style="border-left-color:#f97316">
+      <div class="exp-block-title">ISOLATION FOREST · Anomaly Signal</div>
+      <div class="exp-verdict">
+        <span class="icon">🔍</span>RF classifiers scored this as Normal.
+        Isolation Forest flagged it as anomalous (score ${scoreStr}).
+      </div>
+      <div class="exp-verdict" style="margin-top:6px;font-size:12px;color:#94a3b8">
+        ${sentence}
+      </div>
+      <div class="exp-features" style="margin-top:10px">${rows}</div>
+      ${noData}
+    </div>`;
+}
+
+function buildExplanation(dual, nslExp, cicExp, features) {
   const container = document.getElementById("expContainer");
 
   const rfAttack  = dual.nslkdd_rf_prediction === 1 || dual.cicids_rf_prediction === 1;
-  const ifAnomaly = dual.nslkdd_if_prediction === 1 || dual.cicids_if_prediction === 1;
-  const isZeroDay = ifAnomaly && !rfAttack;
+  const nslIF     = dual.nslkdd_if_prediction === 1;
+  const cicIF     = dual.cicids_if_prediction === 1;
+  const ifAnomaly = nslIF || cicIF;
+  const isIFOnly  = ifAnomaly && !rfAttack;   // RF=Normal, IF=Anomaly
   const confirmed = rfAttack && ifAnomaly;
 
+  // ── Banner ──────────────────────────────────────────────────────────────────
   let banner = "";
-  if (isZeroDay) {
+  if (isIFOnly) {
+    // FIX: was "POSSIBLE ZERO-DAY" even when attack_type was already resolved.
+    // Now shows the actual resolved attack type prominently.
+    const typeStr  = dual.attack_type && dual.attack_type !== "Anomalous Behaviour Detected"
+      ? `<strong>${dual.attack_type}</strong>`
+      : "Unknown pattern";
+    const subtext  = dual.attack_type && dual.attack_type !== "Anomalous Behaviour Detected"
+      ? `Classified by derived traffic features — RF training data does not cover this
+         exact tool/pattern. Isolation Forest independently confirmed the anomaly.`
+      : `Isolation Forest detected unusual behaviour. RF classifiers report normal —
+         this traffic pattern was not seen during RF training.`;
     banner = `
       <div class="anomaly-banner zero-day">
-        <span class="anomaly-icon">🛸</span>
+        <span class="anomaly-icon">🔍</span>
         <div>
-          <div class="anomaly-title">POSSIBLE ZERO-DAY / UNKNOWN ATTACK</div>
-          <div class="anomaly-sub">
-            ${dual.attack_type ? `<strong>Type: ${dual.attack_type}</strong> — ` : ""}
-            Isolation Forest detected abnormal behaviour not matching known attack patterns.
-            RF classifiers report normal — this may be a novel or unseen threat.
-          </div>
+          <div class="anomaly-title">IF DETECTION — ${(dual.attack_type || "ANOMALY").toUpperCase()}</div>
+          <div class="anomaly-sub"><strong>Type: ${typeStr}</strong> — ${subtext}</div>
         </div>
       </div>`;
   } else if (confirmed) {
@@ -305,7 +428,8 @@ function buildExplanation(dual, nslExp, cicExp) {
           <div class="anomaly-title">CONFIRMED ATTACK — RF + IF BOTH FLAGGED</div>
           <div class="anomaly-sub">
             ${dual.attack_type ? `<strong>Type: ${dual.attack_type}</strong> — ` : ""}
-            Both the classifier (RF) and anomaly detector (IF) agree this is malicious traffic.
+            Both the Random Forest classifier and Isolation Forest anomaly detector
+            independently agree this is malicious traffic.
           </div>
         </div>
       </div>`;
@@ -323,38 +447,93 @@ function buildExplanation(dual, nslExp, cicExp) {
       </div>`;
   }
 
-  const blocks = [
-    buildExpBlock("NSL-KDD RF", dual.nslkdd_rf_prediction, nslExp?.top_features),
-    buildExpBlock("CICIDS RF",  dual.cicids_rf_prediction,  cicExp?.top_features),
-  ].filter(Boolean);
+  // ── Explanation blocks ──────────────────────────────────────────────────────
+  let rfSection = "";
 
-  const rfSection = blocks.length
-    ? blocks.join("")
-    : `<p class="exp-waiting">No SHAP data available yet.</p>`;
+  if (isIFOnly) {
+    // FIX: when RF=Normal and IF=Anomaly, showing RF SHAP blocks with
+    // "Normal traffic ✅" directly contradicts the anomaly banner above.
+    // Instead show:
+    //   1. An IF explanation block with derived features as evidence
+    //   2. The RF SHAP blocks labelled clearly as "RF assessed Normal"
+    //      so the user understands WHY the RF missed it
+    const ifBlock  = buildIFBlock(dual, features);
+    const rfBlocks = [
+      buildExpBlock("NSL-KDD RF", dual.nslkdd_rf_prediction, nslExp?.top_features,
+                    /*ifOnly=*/true, dual.nslkdd_if_prediction === 1),
+      buildExpBlock("CICIDS RF",  dual.cicids_rf_prediction,  cicExp?.top_features,
+                    /*ifOnly=*/true, dual.cicids_if_prediction === 1),
+    ].filter(Boolean);
+
+    rfSection = ifBlock + (rfBlocks.length
+      ? `<div style="margin-top:4px;font-size:10px;letter-spacing:1.5px;
+                     color:#475569;text-transform:uppercase;padding:8px 0 4px">
+           RF Assessment (explains why classifier did not flag)
+         </div>` + rfBlocks.join("")
+      : "");
+
+  } else {
+    // Normal RF-driven path: show SHAP blocks as before
+    const blocks = [
+      buildExpBlock("NSL-KDD RF", dual.nslkdd_rf_prediction, nslExp?.top_features,
+                    /*ifOnly=*/false, nslIF),
+      buildExpBlock("CICIDS RF",  dual.cicids_rf_prediction,  cicExp?.top_features,
+                    /*ifOnly=*/false, cicIF),
+    ].filter(Boolean);
+
+    rfSection = blocks.length
+      ? blocks.join("")
+      : `<p class="exp-waiting">No SHAP data available yet.</p>`;
+  }
 
   container.innerHTML = banner + rfSection;
 }
 
-function buildExpBlock(source, prediction, topFeatures) {
+// FIX: added ifOnly and ifFlagged params so the block correctly labels
+// itself when the RF said Normal but the IF fired on this dataset.
+function buildExpBlock(source, prediction, topFeatures, ifOnly = false, ifFlagged = false) {
   if (!topFeatures || topFeatures.length === 0) return null;
 
-  const isAttack  = prediction === 1;
-  const cls       = isAttack ? "attack" : "normal";
-  const icon      = isAttack ? "⚠️" : "✅";
-  const verdict   = isAttack ? "Attack detected" : "Normal traffic";
+  const isAttack = prediction === 1;
 
-  const top3      = topFeatures.slice(0, 3);
-  const featNames = top3.map(f => `<strong>${f.feature}</strong>`).join(", ");
-  const sentence  = isAttack
-    ? `Flagged due to high SHAP contribution from ${featNames}.`
-    : `Classified as normal. Top contributing features: ${featNames}.`;
+  // When ifOnly=true the RF said Normal — display it honestly as such,
+  // with a muted style, explaining it's the RF view not the overall verdict.
+  const cls     = isAttack ? "attack" : (ifOnly ? "exp-block-muted" : "normal");
+  const icon    = isAttack ? "⚠️" : (ifOnly && ifFlagged ? "🔍" : "✅");
+
+  let verdict, sentence;
+  if (isAttack) {
+    const top3     = topFeatures.slice(0, 3);
+    const featNames = top3.map(f => `<strong>${f.feature}</strong>`).join(", ");
+    verdict  = "Attack detected";
+    sentence = `Flagged due to high SHAP contribution from ${featNames}.`;
+  } else if (ifOnly) {
+    // RF said Normal — explain what features kept it below the attack threshold
+    const top3     = topFeatures.slice(0, 3);
+    const featNames = top3.map(f => `<strong>${f.feature}</strong>`).join(", ");
+    verdict  = ifFlagged
+      ? "RF: Normal (IF flagged anomaly)"
+      : "RF: Normal";
+    sentence = `This dataset's RF classifier scored the traffic as normal. ` +
+               `Features with highest influence on that decision: ${featNames}. ` +
+               `The Isolation Forest detected the anomaly through statistical deviation,
+               not through feature-boundary classification.`;
+  } else {
+    const top3     = topFeatures.slice(0, 3);
+    const featNames = top3.map(f => `<strong>${f.feature}</strong>`).join(", ");
+    verdict  = "Normal traffic";
+    sentence = `Classified as normal. Top contributing features: ${featNames}.`;
+  }
 
   const maxAbs = Math.max(...topFeatures.slice(0, 6).map(f => Math.abs(f.shap_value)));
 
   const rows = topFeatures.slice(0, 6).map(f => {
     const abs  = Math.abs(f.shap_value);
     const pct  = maxAbs > 0 ? (abs / maxAbs * 100).toFixed(1) : 0;
-    const tier = abs > 0.2 ? "high" : abs > 0.1 ? "medium" : "low";
+    // When ifOnly, use muted tiers — the RF values are correct but not the alert signal
+    const tier = ifOnly
+      ? (abs > 0.2 ? "medium" : "low")
+      : (abs > 0.2 ? "high" : abs > 0.1 ? "medium" : "low");
     return `
       <div class="exp-feat-row">
         <span class="exp-feat-name" title="${f.feature}">${f.feature}</span>
@@ -365,8 +544,13 @@ function buildExpBlock(source, prediction, topFeatures) {
       </div>`;
   }).join("");
 
+  // Muted styling for RF-Normal blocks in an IF-only detection
+  const blockStyle = ifOnly && !isAttack
+    ? ' style="opacity:0.65;border-left-color:#334155"'
+    : '';
+
   return `
-    <div class="exp-block ${cls}">
+    <div class="exp-block ${isAttack ? "attack" : "normal"}"${blockStyle}>
       <div class="exp-block-title">${source} · SHAP</div>
       <div class="exp-verdict"><span class="icon">${icon}</span>${verdict} — ${sentence}</div>
       <div class="exp-features">${rows}</div>
@@ -531,8 +715,9 @@ async function poll() {
     const source = latest.source;
     const ts     = latest.ts ?? null;
 
-    // Connection state — single call handles dot + label atomically
-    setConnectionOnline(source);
+    // Connection state — only writes DOM when it actually changes
+    setConnection(true);
+    setSourceLabel(source);
 
     // ── Always update cards/gauge/contribs (guarded internally) ───────────
     updateCards(dual);
@@ -563,14 +748,23 @@ if (isNewEntry) {
   // Add log to dashboard
   addLog(dual, source);
 }
-    // ── SHAP — FIX: fire as a detached async call so it does NOT hold
-    //   the _polling guard. This prevents poll-skip cascades when SHAP is slow.
+    // ── SHAP — fires as a detached async call (does not hold _polling guard).
+    // FIX 3a: isNewTs was undefined (always false) → SHAP never re-fired after
+    //         the first poll. Replaced with isNewEntry (the correct variable).
+    // FIX 3b: snapshot both dual AND features at trigger time so the async
+    //         callback always explains the prediction it was started for,
+    //         not whatever _latest contains when the await resolves.
+    // FIX 3c: pass features into buildExplanation so IF blocks can render
+    //         derived-feature evidence when RF=Normal and IF=Anomaly.
     const now = Date.now();
 
     if (!_lastExplainTs || (isNewEntry && now - _lastExplainTs >= EXPLAIN_MS)) {
       _lastExplainTs = now;
 
+      // Snapshot both at trigger time — the async call takes time and
+      // latest/dual may have moved on by the time the response arrives.
       const featuresSnapshot = latest.features;
+      const dualSnapshot     = dual;
 
       (async () => {
         try {
@@ -581,11 +775,14 @@ if (isNewEntry) {
           const nslExp = explainRes.nslkdd_explanation;
           const cicExp = explainRes.cicids_explanation;
 
+          // Update the SHAP bar chart with NSL-KDD RF features
+          // (only meaningful when NSL-KDD RF actually fired an attack)
           if (nslExp?.top_features) {
             updateSHAP(nslExp.top_features);
           }
 
-          buildExplanation(dual, nslExp, cicExp);
+          // Pass featuresSnapshot so IF explanation blocks have derived features
+          buildExplanation(dualSnapshot, nslExp, cicExp, featuresSnapshot);
 
         } catch (err) {
           console.warn("SHAP error:", err.message);
@@ -594,7 +791,7 @@ if (isNewEntry) {
     }
 
   } catch (err) {
-    setConnectionOffline();
+    setConnection(false);
     console.warn("Poll error:", err.message);
   } finally {
     _polling = false;   // always release, even on error
