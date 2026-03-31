@@ -1,9 +1,0 @@
-timestamp,source,src_ip,dst_ip,protocol,risk_level,risk_score,attack_type,nslkdd_rf,nslkdd_if,cicids_rf,cicids_if,nslkdd_anom_score,cicids_anom_score
-2026-03-30 14:52:04,random,,,1.0,Medium,27.0,Normal,0,0,0,0,-0.40758346233266185,-0.3257833147076861
-2026-03-30 14:52:05,live,,,1,Medium,27.0,Normal,0,0,0,0,-0.40758346233266185,-0.3257833147076861
-2026-03-30 15:01:54,live,,,icmp,Medium,40.0,Anomalous Behaviour Detected,0,1,0,0,-0.5273884525683322,-0.36314877006330243
-2026-03-30 15:04:05,live,,,tcp,High,63.9,Probe / Scan,1,1,0,1,-0.6726116311484402,-0.5544543991674566
-2026-03-30 15:05:44,live,,,tcp,Medium,44.0,DoS Attack,0,1,0,1,-0.49776689483820624,-0.6778989361619358
-2026-03-30 15:08:11,live,,,tcp,High,53.6,Brute Force Attack — FTP,0,1,0,1,-0.5503678062785836,-0.528710178760592
-2026-03-30 15:34:40,live,,,tcp,High,61.1,Probe / Scan,1,1,0,1,-0.6404342809512027,-0.4963798819044166
-2026-03-30 15:45:33,live,,,tcp,High,68.5,DoS Attack,1,1,0,1,-0.6609941526545687,-0.589458672982368

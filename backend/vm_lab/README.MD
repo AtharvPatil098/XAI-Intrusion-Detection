@@ -82,12 +82,12 @@ uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 ```cmd
 cd backend
 python vm_lab/flow_extractor.py ^
-  --interface "\Device\NPF_{BCB66A33-2C7F-49EE-A091-11D81FED149C}" ^
-  --kali 192.168.232.129 ^
-  --target 192.168.232.130
+  --interface "\Device\NPF_{B6C8BD0C-3877-4AC6-98CB-927D988DFD58}" ^
+  --kali 192.168.231.131 ^
+  --target 192.168.127.128
 ```
 atharv = \Device\NPF_{BCB66A33-2C7F-49EE-A091-11D81FED149C}
-
+rudra = \Device\NPF_{B6C8BD0C-3877-4AC6-98CB-927D988DFD58}
 Replace `{your-guid-here}` with the GUID you found in Step 2.
 
 ### Terminal 3 — Dashboard
