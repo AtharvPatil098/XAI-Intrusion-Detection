@@ -1,0 +1,156 @@
+XAI_IDS/
+│
+├── backend/
+│   ├── app.py                      # API entry point (Flask/FastAPI)
+│   ├── config.py                   # Central config (paths, constants)
+│   ├── requirements.txt
+│
+│   ├── data/
+│   │   ├── raw/
+│   │   │   ├── NSL_KDD/
+│   │   │   └── CICIDS/
+│   │   │
+│   │   └── processed/
+│   │       ├── NSL_KDD/
+│   │       │   ├── X_train.csv
+│   │       │   ├── X_test.csv
+│   │       │   ├── y_train.csv
+│   │       │   └── y_test.csv
+│   │       │
+│   │       └── CICIDS/
+│   │           ├── X_train.csv
+│   │           ├── X_test.csv
+│   │           ├── y_train.csv
+│   │           └── y_test.csv
+│
+│   ├── preprocessing/
+│   │   ├── preprocess_nslkdd.py
+│   │   ├── preprocess_cicids.py
+│   │   └── feature_adapter.py      ⭐ CORE (VERY IMPORTANT)
+│
+│   ├── model/
+│   │   ├── train_models.py         ⭐ (RF + XGB combined)
+│   │   ├── predict.py              ⭐ MAIN PIPELINE (BRAIN)
+│   │   ├── evaluate.py
+│   │   └── risk_score.py
+│
+│   ├── anomaly_detection/
+│   │   └── train_if.py             # Isolation Forest
+│
+│   ├── explainability/
+│   │   ├── shap_explainer.py
+│   │   └── explanation_engine.py
+│
+│   ├── realtime_detection/
+│   │   └── realtime_detector.py
+│
+│   ├── artifacts/
+│   │   ├── nsl_feature_columns.json
+│   │   └── cicids_feature_columns.json
+│
+│   ├── saved_models/
+│   │   ├── NSL_KDD/
+│   │   │   ├── xgb_model.pkl
+│   │   │   ├── rf_model.pkl
+│   │   │   └── if_model.pkl
+│   │   │
+│   │   └── CICIDS/
+│   │       ├── xgb_model.pkl
+│   │       ├── rf_model.pkl
+│   │       └── if_model.pkl
+│
+│   ├── vm_lab/
+│   │   ├── logs/
+│   │   │   ├── normal_traffic.log
+│   │   │   ├── attack_traffic.log
+│   │   │   └── mixed_traffic.log
+│   │   │
+│   │   ├── attack_scripts/
+│   │   │   ├── port_scan.sh
+│   │   │   ├── dos_attack.sh
+│   │   │   └── brute_force.sh
+│   │   │
+│   │   ├── traffic_simulator.py
+│   │   └── README.md
+│
+│   ├── logs/
+│   │   ├── predictions.log
+│   │   └── anomalies.log
+│
+│   └── utils/
+│       └── helpers.py
+│
+├── frontend/
+│   ├── index.html
+│   ├── css/
+│   │   └── styles.css
+│   └── js/
+│       └── dashboard.js
+│
+├── docs/
+│   └── architecture.png
+│
+├── README.md
+└── .gitignore
+
+
+
+new one 
+
+
+backend/
+│
+├── config.py                     ⭐ (USE THIS MORE)
+│
+├── data/
+│   ├── raw/
+│   └── processed/
+│       ├── NSL_KDD/
+│       │   ├── nsl_X_train.csv
+│       │   └── ...
+│       │
+│       └── CICIDS/
+│           ├── cicids_X_train.csv
+│           └── ...
+│
+├── preprocessing/
+│   ├── preprocess_nslkdd.py
+│   ├── preprocess_cicids.py
+│   └── feature_adapter.py        ⭐ CORE
+│
+├── model/
+│   ├── train_models.py
+│   ├── predict.py                ⭐ BRAIN
+│   ├── evaluate.py
+│   └── risk_score.py
+│
+├── anomaly_detection/
+│   └── train_if.py
+│
+├── explainability/
+│   ├── shap_explainer.py
+│   └── explanation_engine.py
+│
+├── artifacts/
+│   ├── cicids_feature_columns.json
+│   ├── nsl_kdd_feature_columns.json
+│   └── cicids_label_encoder.pkl   ⭐ (future)
+│
+├── saved_models/
+│   ├── CICIDS/
+│   │   ├── cicids_xgb_model.pkl
+│   │   ├── cicids_rf_model.pkl
+│   │   └── cicids_if_model.pkl
+│
+
+
+
+
+
+
+
+
+
+
+
+

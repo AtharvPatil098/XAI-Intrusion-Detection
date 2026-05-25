@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XAI Intrusion Detection System</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Roboto+Mono&display=swap" rel="stylesheet">
+    
+    <!-- Spline -->
+    <script type="module" src="https://unpkg.com/@splinetool/viewer@1.12.68/build/spline-viewer.js"></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body>
+
+    <!-- BACKGROUND -->
+    <div class="background-spline">
+        <spline-viewer url="https://prod.spline.design/kY1aOhIyaxQcJ-aq/scene.splinecode"></spline-viewer>
+    </div>
+
+    <div class="container">
+
+        <!-- HEADER -->
+        <header>
+            <h1>XAI INTRUSION DETECTION SYSTEM</h1>
+            <div class="team-names">
+                Developed by: Atharv Patil (641) | Rudra Pawar (644) | Darshan Pawar (643) | Amish Koli (628)
+            </div>
+        </header>
+
+        <!-- ================= ROW 1 ================= -->
+        <div class="row-2-col" style="margin-bottom: 20px;">
+
+            <!-- LIVE DETECTION -->
+            <div class="card">
+                <h3>REAL TIME DETECTION</h3>
+                <div class="feed-box" id="live-feed">
+                    <div class="feed-item">🔄 Initializing system...</div>
+                </div>
+            </div>
+
+            <!-- ROBOT -->
+            <div class="card" id="robot-card">
+                <div id="robot-container">
+                    <spline-viewer id="robot-spline" url="https://prod.spline.design/IJU2C5ueOZQJKEfG/scene.splinecode"></spline-viewer>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ================= THREAT LEVEL ================= -->
+        <div class="row-center" style="margin-bottom: 20px;">
+            <div class="card threat-card">
+                <h3>THREAT LEVEL</h3>
+
+                <div class="risk-number" id="threat-score">--%</div>
+
+                <p id="status-text" style="color: #aaa; font-size: 0.8rem; margin:0;">
+                    Status: Initializing...
+                </p>
+            </div>
+        </div>
+
+        <!-- ================= SHAP ================= -->
+        <div class="row-center" style="margin-bottom: 20px;">
+            <div class="card shap-card" style="width: 100%; max-width: 900px;">
+
+                <h3>THE "XAI" FEATURE EXPLANATION (SHAP)</h3>
+
+                <div class="shap-content">
+                    
+                    <div>
+                        <canvas id="shapChart" height="200"></canvas>
+                    </div>
+
+                    <div class="explanation-bullets">
+                        <p style="color: var(--neon-blue); font-weight: bold;">
+                            Why attack is happening:
+                        </p>
+
+                        <ul id="reason-list">
+                            <li>Waiting for analysis...</li>
+                        </ul>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= ROW 3 ================= -->
+        <div class="row-2-col">
+
+            <!-- SPHERE -->
+            <div class="card" id="sphere-card">
+                <div id="sphere-container">
+                    <spline-viewer id="sphere-spline" url="https://prod.spline.design/hdYYzNgKS4WqdhYI/scene.splinecode"></spline-viewer>
+                </div>
+            </div>
+
+            <!-- ACCURACY -->
+            <div class="card">
+                <h3>MODEL ACCURACY</h3>
+                <div class="accuracy-display">
+                    <div class="acc-number">98.5%</div>
+                    <p style="color: #aaa; margin:0;">
+                        XGBoost Binary Classifier
+                    </p>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- ✅ FIX: LOAD JS AFTER DOM -->
+    <script src="js/dashboard.js" defer></script>
+
+</body>
+</html>
