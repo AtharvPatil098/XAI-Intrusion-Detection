@@ -1,3 +1,14 @@
+<<<<<<< HEAD
+__pycache__/
+*.pyc
+.env
+venv/
+*.pkl
+*.csv
+logs/
+saved_models/
+data/
+=======
 # ======================
 # Logs
 # ======================
@@ -31,3 +42,4 @@ __pycache__/
 # Environment
 # ======================
 .env
+>>>>>>> b74af1039ca230811c9075534ea29f37bdc263f8

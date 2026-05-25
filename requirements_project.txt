@@ -1,0 +1,183 @@
+# XAI Intrusion Detection System (XAI-IDS)
+
+## 📌 Project Requirements Document
+
+---
+
+## 1. 🎯 Objective
+
+To build an Explainable AI-based Intrusion Detection System that:
+
+* Detects cyber attacks using Machine Learning
+* Identifies unknown anomalies
+* Provides explainable predictions
+* Assigns threat scores
+* Simulates real-world attack scenarios
+
+---
+
+## 2. 🧠 Functional Requirements
+
+### 2.1 Data Handling
+
+* Load NSL-KDD dataset
+* (Optional later) Load CICIDS dataset
+* Store raw and processed data separately
+
+---
+
+### 2.2 Preprocessing
+
+* Data cleaning (remove duplicates, handle missing values)
+* Encode categorical features
+* Feature scaling
+* Feature selection
+* Save preprocessing artifacts (encoders, scaler)
+
+---
+
+### 2.3 Detection System
+
+#### Supervised Model
+
+* Train XGBoost classifier
+* Train Random Forest (baseline)
+
+#### Unsupervised Model
+
+* Train Isolation Forest for anomaly detection
+
+---
+
+### 2.4 Prediction Pipeline
+
+* Accept input data (CSV/log)
+* Apply preprocessing (via feature_adapter)
+* Predict attack type (XGBoost)
+* Detect anomalies (Isolation Forest)
+
+---
+
+### 2.5 Explainability
+
+* Use SHAP for feature importance
+* Provide local explanation for each prediction
+
+---
+
+### 2.6 Threat Scoring
+
+* Assign risk score (0–100)
+* Combine:
+
+  * Model confidence
+  * Anomaly score
+
+---
+
+### 2.7 API Layer
+
+* Provide endpoints for:
+
+  * Prediction
+  * Explanation
+  * Status
+
+---
+
+### 2.8 Dashboard
+
+* Display:
+
+  * Predictions
+  * Threat levels
+  * Graphs (attack trends)
+  * Explanation results
+
+---
+
+### 2.9 Simulation (Advanced)
+
+* Simulate attacks using Kali Linux and Metasploit
+* Capture logs for testing
+
+---
+
+## 3. ⚙️ Non-Functional Requirements
+
+* Modular architecture
+* Scalable design
+* Fast prediction response
+* Reliable and consistent outputs
+* Easy debugging and logging
+
+---
+
+## 4. 🧱 System Components
+
+* Data Preprocessing Module
+* Machine Learning Module
+* Anomaly Detection Module
+* Explainability Module
+* API Layer
+* Dashboard UI
+* Simulation Environment
+
+---
+
+## 5. 🛠️ Technology Stack
+
+### Programming
+
+* Python
+
+### Libraries
+
+* Scikit-learn
+* XGBoost
+* SHAP
+* Pandas, NumPy
+
+### Backend
+
+* FastAPI / Flask
+
+### Frontend
+
+* HTML, CSS, JavaScript
+
+### Tools
+
+* GitHub (version control)
+* Kali Linux
+* Metasploit
+
+---
+
+## 6. 📊 Evaluation Metrics
+
+* Accuracy
+* Precision
+* Recall
+* F1-score
+* Confusion Matrix
+
+---
+
+## 7. 🚀 Future Enhancements
+
+* Real-time packet capture
+* CICIDS dataset integration
+* Advanced dashboard (React)
+* Deep learning models
+
+---
+
+## 8. 🧠 Key Innovation
+
+* Hybrid Detection (Supervised + Unsupervised)
+* Explainable AI integration
+* Threat scoring mechanism
+* Real-time simulation capability
+
+---
