@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 \# XAI Intrusion Detection System (XAI-IDS)
 
 
@@ -72,3 +73,9 @@ To build a reliable and explainable cybersecurity intrusion detection system.
 
 
 
+=======
+# XAi - Intrusion Detection System
+
+## VM Lab Integration
+See [`backend/vm_lab/README.md`](backend/vm_lab/README.md) for full Kali Linux + Metasploitable setup and attack simulation instructions.
+>>>>>>> b74af1039ca230811c9075534ea29f37bdc263f8

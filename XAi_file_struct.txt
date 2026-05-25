@@ -1,0 +1,124 @@
+XAI-Intrusion-Detection/
+│
+├── backend/
+│   ├── app.py                      ← API layer (connects frontend)
+│   ├── config.py                   ← dataset/config settings
+│   ├── requirements.txt
+│
+│   ├── data/
+│   │   ├── raw/
+│   │   │   ├── NSL_KDD/
+│   │   │   └── CICIDS/
+│   │   │
+│   │   └── processed/
+│   │       ├── nsl_kdd_processed.csv
+│   │       └── cicids_processed.csv
+│
+│   ├── preprocessing/
+│   │   ├── preprocess_cicids.py
+│   │   ├── preprocess_nslkdd.py
+│   │   └── feature_adapter.py      ⭐ CORE MODULE
+│
+│   ├── model/
+│   │   ├── train_rf.py
+│   │   ├── predict.py              ← uses adapter
+│   │   └── risk_score.py           ← combines 4 model outputs
+│
+│   ├── anomaly_detection/
+│   │   └── train_if.py
+│
+│   ├── explainability/
+│   │   ├── shap_explainer.py
+│   │   └── explanation_engine.py
+│
+│   ├── realtime_detection/
+│   │   └── realtime_detector.py    ← live simulation loop
+│
+│   ├── saved_models/
+│   │   ├── NSL_KDD/
+│   │   │   ├── rf_model.pkl
+│   │   │   └── if_model.pkl
+│   │   │
+│   │   └── CICIDS/
+│   │       ├── rf_model.pkl
+│   │       └── if_model.pkl
+│
+│   ├── vm_lab/
+│   │   ├── logs/
+│   │   │   ├── ids_log_2026-03-24.csv
+│   │   │   ├── ids_log_2026-03-25.csv
+│   │   │   └── ids_log_2026-03-26.csv
+│   │   │
+│   │   ├── attack_scripts/
+│   │   │   ├── port_scan.sh
+│   │   │   ├── dos_attack.sh
+│   │   │   └── brute_force.sh
+│   │   │
+│   │   ├── traffic_simulator.py
+│   │   └── README.md
+│
+│   └── utils/
+│       └── helpers.py
+│
+├── frontend/
+│   ├── index.html
+│   ├── css/
+│   │   └── styles.css
+│   └── js/
+│       └── dashboard.js
+│
+├── docs/
+│   └── architecture.png
+│
+├── README.md
+└── .gitignore
+🔥 WHAT CHANGED / CLEANED
+✅ 1. Preprocessing clarified
+
+Instead of:
+
+preprocess.py (combined)
+
+Now:
+
+preprocess_cicids.py
+preprocess_nslkdd.py
+
+✔ Better separation
+✔ Easier debugging
+
+✅ 2. feature_adapter.py clearly marked as CORE
+
+This is now your:
+
+👉 “mini pipeline replacing full feature engineering system”
+
+✅ 3. VM lab structured properly
+vm_lab/
+  ├── logs/
+  ├── attack_scripts/
+  ├── traffic_simulator.py
+
+✔ Clean separation:
+
+Logs = data
+Scripts = attacks
+Simulator = execution
+✅ 4. Model + Anomaly split
+model/                → RF (classification)
+anomaly_detection/    → IF (unsupervised)
+
+✔ Good architecture practice
+
+✅ 5. Explainability separated
+shap_explainer.py
+explanation_engine.py
+
+✔ Clean XAI pipeline
+
+🧠 FINAL UNDERSTANDING
+
+This structure is:
+✔ Easy to debug
+✔ Modular
+✔ Scalable
